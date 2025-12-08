@@ -154,21 +154,20 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             subprocess_args = {
                 'args': [command] + args[1:],
                 'executable': full_path,
-                'stdout': stdout_param,
-                'stderr': stderr_target
+                'stdout': stdout_param if stdout_param == subprocess.PIPE else (stdout_target.fileno() if stdout_target else None),
+                'stderr': stderr_target.fileno() if stderr_target else None
             }
 
             # Ensure stderr is redirected to file when requested
             if redirect_stderr and redirect_file and stderr_target is None:
                 mode = 'ab' if redirect_append else 'wb'
                 stderr_target = open(redirect_file, mode)
-                subprocess_args['stderr'] = stderr_target
+                subprocess_args['stderr'] = stderr_target.fileno()
 
             # Use input parameter if stdin_data is provided, otherwise don't set stdin
             if stdin_data is not None:
                 subprocess_args['input'] = stdin_data
             # Don't set stdin parameter when using input
-
 
             result = subprocess.run(**subprocess_args)
 
@@ -421,8 +420,8 @@ def main():
                         [command] + args[1:],
                         executable=full_path,
                         stdin=prev_read_fd,
-                        stdout=stdout_param,
-                        stderr=stderr_target
+                        stdout=stdout_param if not hasattr(stdout_param, 'fileno') else stdout_param.fileno(),
+                        stderr=stderr_target.fileno() if stderr_target else None
                     )
 
                     processes.append((proc, stdout_target, stderr_target, prev_read_fd, write_fd))
