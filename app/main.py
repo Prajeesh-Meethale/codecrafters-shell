@@ -321,35 +321,113 @@ def main():
                     current_pos = pipe_pos + 1
             
             # Execute pipeline
-            stdin_data = None
-            for idx, cmd_line in enumerate(pipeline_commands):
-                is_last = (idx == len(pipeline_commands) - 1)
-                
-                # Parse redirection (only on last command)
-                if is_last:
-                    cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(cmd_line)
-                else:
-                    cmd_part, redirect_file, redirect_stderr, redirect_append = cmd_line, None, False, False
-                
+            if len(pipeline_commands) == 1:
+                # Single command - no pipeline
+                cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(pipeline_commands[0])
                 args = shlex.split(cmd_part)
-                if not args:
-                    continue
-                command = args[0]
+                if args:
+                    command = args[0]
+                    execute_command(command, args, redirect_file, redirect_stderr, redirect_append, None, should_print=True)
+            else:
+                # Pipeline - execute commands with real pipes
+                processes = []
+                prev_read_fd = None
                 
-                # Execute command
-                output = execute_command(command, args, redirect_file if is_last else None, 
-                                       redirect_stderr if is_last else False, 
-                                       redirect_append if is_last else False, 
-                                       stdin_data, should_print=is_last)
+                for idx, cmd_line in enumerate(pipeline_commands):
+                    is_last = (idx == len(pipeline_commands) - 1)
+                    
+                    # Parse redirection (only on last command)
+                    if is_last:
+                        cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(cmd_line)
+                    else:
+                        cmd_part, redirect_file, redirect_stderr, redirect_append = cmd_line, None, False, False
+                    
+                    args = shlex.split(cmd_part)
+                    if not args:
+                        continue
+                    command = args[0]
+                    
+                    # Handle builtin commands in pipeline
+                    if command in ["echo", "type", "pwd", "cd", "exit"]:
+                        if is_last:
+                            # Last command - execute normally
+                            execute_command(command, args, redirect_file, redirect_stderr, redirect_append, None, should_print=True)
+                        else:
+                            # Intermediate builtin - capture output and write to pipe
+                            output = execute_command(command, args, None, False, False, None, should_print=False)
+                            if prev_read_fd:
+                                os.close(prev_read_fd)
+                            if output:
+                                # Create pipe and write output
+                                read_fd, write_fd = os.pipe()
+                                os.write(write_fd, output)
+                                os.close(write_fd)
+                                prev_read_fd = read_fd
+                        continue
+                    
+                    # External command
+                    full_path = find_executable(command)
+                    if not full_path:
+                        print(f"{command}: command not found")
+                        if prev_read_fd:
+                            os.close(prev_read_fd)
+                        break
+                    
+                    # Create pipe for next command (if not last)
+                    if not is_last:
+                        read_fd, write_fd = os.pipe()
+                    else:
+                        read_fd, write_fd = None, None
+                    
+                    # Setup stdout
+                    stdout_target = None
+                    stderr_target = None
+                    if redirect_file:
+                        dir_path = os.path.dirname(redirect_file)
+                        if dir_path:
+                            os.makedirs(dir_path, exist_ok=True)
+                        mode = 'a' if redirect_append else 'w'
+                        if redirect_stderr:
+                            stderr_target = open(redirect_file, mode)
+                        else:
+                            stdout_target = open(redirect_file, mode)
+                    
+                    # Determine stdout
+                    if stdout_target:
+                        stdout_param = stdout_target
+                    elif write_fd:
+                        stdout_param = write_fd
+                    elif is_last:
+                        stdout_param = None  # Go to terminal
+                    else:
+                        stdout_param = subprocess.PIPE
+                    
+                    # Start process
+                    proc = subprocess.Popen(
+                        [command] + args[1:],
+                        executable=full_path,
+                        stdin=prev_read_fd,
+                        stdout=stdout_param,
+                        stderr=stderr_target
+                    )
+                    
+                    processes.append((proc, stdout_target, stderr_target, prev_read_fd, write_fd))
+                    
+                    # Close pipe ends in parent (child has its own copy)
+                    if prev_read_fd:
+                        os.close(prev_read_fd)
+                    if write_fd:
+                        os.close(write_fd)
+                    
+                    prev_read_fd = read_fd
                 
-                # For pipeline, pass output to next command
-                if not is_last:
-                    stdin_data = output
-                elif not redirect_file and output and command not in ["echo", "type", "pwd"]:
-                    # Last command without redirection - print output (for external commands)
-                    # Builtin commands already print their output
-                    sys.stdout.buffer.write(output)
-                    sys.stdout.buffer.flush()
+                # Wait for all processes (in reverse order for proper cleanup)
+                for proc, stdout_target, stderr_target, stdin_fd, stdout_fd in reversed(processes):
+                    proc.wait()
+                    if stdout_target:
+                        stdout_target.close()
+                    if stderr_target:
+                        stderr_target.close()
         except EOFError:
             break
 
