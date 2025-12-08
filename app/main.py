@@ -169,7 +169,10 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 subprocess_args['input'] = stdin_data
             # Don't set stdin parameter when using input
 
-            result = subprocess.run(**subprocess_args)
+            # Use Popen for better file descriptor control
+            proc = subprocess.Popen(**subprocess_args)
+            proc.wait()  # Wait for process to complete
+            result = proc  # For compatibility with existing code
 
             # Close files after subprocess completes
             if stdout_target:
