@@ -169,28 +169,19 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             if stdin_data is not None:
                 subprocess_args['input'] = stdin_data
 
-            # Handle stderr separately - pass file descriptor, not file object
+            # Handle stderr using the file object directly
             if stderr_target:
-                stderr_target.close()  # Close Python's wrapper
-                # Reopen the file descriptor in raw mode
-                stderr_fd = os.open(redirect_file, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
-                subprocess_args['stderr'] = stderr_fd
-                pass_fds = (stderr_fd,)
+                subprocess_args['stderr'] = stderr_target
             else:
-                pass_fds = ()
                 subprocess_args['stderr'] = None
 
-            proc = subprocess.Popen(**subprocess_args, pass_fds=pass_fds)
+            proc = subprocess.Popen(**subprocess_args)
             proc.wait()
             result = proc  # For compatibility with existing code
 
-            # Close the raw file descriptor if we opened one
+            # Now it's safe to close after process completes
             if stderr_target:
-                try:
-                    os.close(stderr_fd)
-                except:
-                    pass
-                stderr_target = None  # Mark as closed
+                stderr_target.close()
 
             # Close files after subprocess completes
             if stdout_target:
