@@ -141,9 +141,9 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                     os.makedirs(dir_path, exist_ok=True)
                 mode = 'a' if redirect_append else 'w'
                 if redirect_stderr:
-                    stderr_target = open(redirect_file, mode)
+                    stderr_target = open(redirect_file, mode, buffering=1)  # Line buffering
                 else:
-                    stdout_target = open(redirect_file, mode)
+                    stdout_target = open(redirect_file, mode, buffering=1)  # Line buffering
             
             # Determine stdout handling
             if stdout_target:
@@ -169,8 +169,10 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             result = subprocess.run(**subprocess_args)
             
             if stdout_target:
+                stdout_target.flush()
                 stdout_target.close()
             if stderr_target:
+                stderr_target.flush()
                 stderr_target.close()
             
             # Return output for pipeline or print if no redirection
