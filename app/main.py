@@ -366,10 +366,11 @@ def main():
                         dir_path = os.path.dirname(redirect_file)
                         if dir_path:
                             os.makedirs(dir_path, exist_ok=True)
-                        mode = 'ab' if redirect_append else 'wb'
                         if redirect_stderr:
-                            stderr_target = open(redirect_file, mode, buffering=0)
+                            mode = 'a' if redirect_append else 'w'
+                            stderr_target = open(redirect_file, mode, encoding='utf-8')
                         else:
+                            mode = 'ab' if redirect_append else 'wb'
                             stdout_target = open(redirect_file, mode, buffering=0)
 
                     # Determine stdout
