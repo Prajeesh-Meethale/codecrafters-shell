@@ -85,7 +85,8 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 os.makedirs(dir_path, exist_ok=True)
             # Create empty file or truncate/append if it exists
             mode = 'a' if redirect_append else 'w'
-            open(redirect_file, mode).close()
+            with open(redirect_file, mode) as f:
+                pass  # Just create/truncate the file
         
         # Print to stdout
         sys.stdout.write(output)
@@ -111,7 +112,8 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 os.makedirs(dir_path, exist_ok=True)
             # Create empty file or truncate/append if it exists
             mode = 'a' if redirect_append else 'w'
-            open(redirect_file, mode).close()
+            with open(redirect_file, mode) as f:
+                pass  # Just create/truncate the file
         
         # Print to stdout
         sys.stdout.write(output)
@@ -127,7 +129,8 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 os.makedirs(dir_path, exist_ok=True)
             # Create empty file or truncate/append if it exists
             mode = 'a' if redirect_append else 'w'
-            open(redirect_file, mode).close()
+            with open(redirect_file, mode) as f:
+                pass  # Just create/truncate the file
         
         # Print to stdout
         sys.stdout.write(output)
