@@ -154,7 +154,7 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             subprocess_args = {
                 'args': [command] + args[1:],
                 'executable': full_path,
-                'stdout': stdout_param if stdout_param == subprocess.PIPE else (stdout_target.fileno() if stdout_target else None),
+                'stdout': stdout_param,
                 'stderr': stderr_target.fileno() if stderr_target else None
             }
 
