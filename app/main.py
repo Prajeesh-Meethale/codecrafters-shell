@@ -3,12 +3,14 @@ import os
 import subprocess
 import shlex
 
+
 def find_executable(command):
     for path in os.environ.get('PATH', '').split(os.pathsep):
         full_path = os.path.join(path, command)
         if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
             return full_path
     return None
+
 
 def execute_command(command, args, redirect_file=None, redirect_stderr=False, redirect_append=False, stdin_data=None, should_print=True):
     """Execute a single command with optional redirection and stdin.
@@ -136,8 +138,6 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 if redirect_stderr:
                     mode = 'ab' if redirect_append else 'wb'
                     stderr_target = open(redirect_file, mode, buffering=0)
-                    # DEBUG: Print what we're doing
-                    print(f"[DEBUG] Opened {redirect_file} for stderr, fd={stderr_target.fileno()}", file=sys.stderr)
                 else:
                     mode = 'ab' if redirect_append else 'wb'
                     stdout_target = open(redirect_file, mode, buffering=0)
@@ -159,9 +159,6 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 'stdout': stdout_param,
                 'stderr': stderr_target.fileno() if stderr_target else None
             }
-            # DEBUG: Print subprocess args
-            if redirect_stderr:
-                print(f"[DEBUG] subprocess_args stderr={subprocess_args['stderr']}", file=sys.stderr)
 
             # Ensure stderr is redirected to file when requested
             if redirect_stderr and redirect_file and stderr_target is None:
@@ -172,28 +169,17 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             # Use input parameter if stdin_data is provided, otherwise don't set stdin
             if stdin_data is not None:
                 subprocess_args['input'] = stdin_data
-            # Don't set stdin parameter when using input
 
             # Use Popen for better file descriptor control
             proc = subprocess.Popen(**subprocess_args)
             proc.wait()  # Wait for process to complete
             result = proc  # For compatibility with existing code
 
-            # DEBUG: Check file after process completes
-            if stderr_target:
-                current_pos = stderr_target.tell()
-                print(f"[DEBUG] After subprocess, file position={current_pos}", file=sys.stderr)
-
             # Close files after subprocess completes
             if stdout_target:
-                try:
-                    stdout_target.flush()
-                    os.fsync(stdout_target.fileno())
-                except:
-                    pass
                 stdout_target.close()
             if stderr_target:
-                stderr_target.close()  # Just close it, let OS handle flushing
+                stderr_target.close()
 
             # Return output for pipeline or print if no redirection
             if stdout_param == subprocess.PIPE:
@@ -203,6 +189,7 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
         else:
             print(f"{command}: command not found")
             return b""
+
 
 def parse_redirection(cmd_line):
     """Parse redirection from a command line and return (command_part, redirect_file, redirect_stderr, redirect_append)."""
@@ -296,6 +283,7 @@ def parse_redirection(cmd_line):
         return cmd_part, redirect_file, redirect_stderr, redirect_append
     
     return cmd_line, None, False, False
+
 
 def main():
     while True:
@@ -463,6 +451,7 @@ def main():
                             pass
         except EOFError:
             break
+
 
 if __name__ == "__main__":
     main()
