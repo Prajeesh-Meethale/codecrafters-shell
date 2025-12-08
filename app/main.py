@@ -10,6 +10,267 @@ def find_executable(command):
             return full_path
     return None
 
+def execute_command(command, args, redirect_file=None, redirect_stderr=False, redirect_append=False, stdin_data=None, should_print=True):
+    """Execute a single command with optional redirection and stdin.
+    should_print: if True, print output for last command; if False, just return bytes for pipeline."""
+    if command == "exit":
+        sys.exit(0)
+    elif command == "echo":
+        output = " ".join(args[1:]) + '\n'
+        output_bytes = output.encode()
+        # Only redirect if it's stdout redirection (not stderr)
+        if redirect_file and not redirect_stderr:
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode) as f:
+                f.write(output)
+            return b""
+        elif redirect_file and redirect_stderr:
+            # Create the file for stderr redirection, but output goes to stdout
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            if not redirect_append:
+                open(redirect_file, 'w').close()  # Create empty file
+            if should_print:
+                sys.stdout.buffer.write(output_bytes)
+                sys.stdout.buffer.flush()
+            return output_bytes if not should_print else b""
+        else:
+            if should_print:
+                sys.stdout.buffer.write(output_bytes)
+                sys.stdout.buffer.flush()
+            return output_bytes
+    elif command == "type":
+        if len(args) < 2:
+            return b""
+        target = args[1]
+        # Check if it's a builtin first
+        builtins = ["echo", "exit", "type", "pwd", "cd"]
+        if target in builtins:
+            output = f"{target} is a shell builtin"
+        else:
+            full_path = find_executable(target)
+            if full_path:
+                output = full_path
+            else:
+                output = f"{target}: not found"
+        
+        output += '\n'
+        output_bytes = output.encode()
+        # Only redirect if it's stdout redirection (not stderr)
+        if redirect_file and not redirect_stderr:
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode) as f:
+                f.write(output)
+            return b""
+        elif redirect_file and redirect_stderr:
+            # Create the file for stderr redirection, but output goes to stdout
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            if not redirect_append:
+                open(redirect_file, 'w').close()  # Create empty file
+            if should_print:
+                sys.stdout.buffer.write(output_bytes)
+                sys.stdout.buffer.flush()
+            return output_bytes if not should_print else b""
+        else:
+            if should_print:
+                sys.stdout.buffer.write(output_bytes)
+                sys.stdout.buffer.flush()
+            return output_bytes
+    elif command == "pwd":
+        output = os.getcwd() + '\n'
+        output_bytes = output.encode()
+        # Only redirect if it's stdout redirection (not stderr)
+        if redirect_file and not redirect_stderr:
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode) as f:
+                f.write(output)
+            return b""
+        elif redirect_file and redirect_stderr:
+            # Create the file for stderr redirection, but output goes to stdout
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            if not redirect_append:
+                open(redirect_file, 'w').close()  # Create empty file
+            if should_print:
+                sys.stdout.buffer.write(output_bytes)
+                sys.stdout.buffer.flush()
+            return output_bytes if not should_print else b""
+        else:
+            if should_print:
+                sys.stdout.buffer.write(output_bytes)
+                sys.stdout.buffer.flush()
+            return output_bytes
+    elif command == "cd":
+        if len(args) > 1:
+            path = os.path.expanduser(args[1])
+            try:
+                os.chdir(path)
+            except OSError:
+                print(f"cd: {args[1]}: No such file or directory")
+        else:
+            # cd without arguments goes to home directory
+            home = os.path.expanduser("~")
+            try:
+                os.chdir(home)
+            except OSError:
+                pass
+        return b""
+    else:
+        full_path = find_executable(command)
+        if full_path:
+            # Use full_path to locate executable, but pass command name as argv[0]
+            stdout_target = None
+            stderr_target = None
+            
+            if redirect_file:
+                dir_path = os.path.dirname(redirect_file)
+                if dir_path:
+                    os.makedirs(dir_path, exist_ok=True)
+                mode = 'a' if redirect_append else 'w'
+                if redirect_stderr:
+                    stderr_target = open(redirect_file, mode)
+                else:
+                    stdout_target = open(redirect_file, mode)
+            
+            # Determine stdout handling
+            if stdout_target:
+                stdout_param = stdout_target
+            elif redirect_file and not redirect_stderr:
+                stdout_param = None  # Will be redirected to file
+            else:
+                stdout_param = subprocess.PIPE  # Capture for pipeline or display
+            
+            result = subprocess.run(
+                [command] + args[1:],
+                executable=full_path,
+                input=stdin_data,
+                stdout=stdout_param,
+                stderr=stderr_target,
+                stdin=subprocess.PIPE if stdin_data else None
+            )
+            
+            if stdout_target:
+                stdout_target.close()
+            if stderr_target:
+                stderr_target.close()
+            
+            # Return output for pipeline or print if no redirection
+            if stdout_param == subprocess.PIPE:
+                output = result.stdout if result.stdout else b""
+                # If no redirect_file, this is either pipeline intermediate or last command
+                # For last command, we'll print it in main()
+                return output
+            return b""
+        else:
+            print(f"{command}: command not found")
+            return b""
+
+def parse_redirection(cmd_line):
+    """Parse redirection from a command line and return (command_part, redirect_file, redirect_stderr, redirect_append)."""
+    redirect_file = None
+    redirect_stderr = False
+    redirect_append = False
+    
+    def is_outside_quotes(pos, text):
+        before = text[:pos]
+        in_single = False
+        in_double = False
+        j = 0
+        while j < len(before):
+            if before[j] == '\\' and j + 1 < len(before):
+                j += 2
+                continue
+            if before[j] == "'" and not in_double:
+                in_single = not in_single
+            elif before[j] == '"' and not in_single:
+                in_double = not in_double
+            j += 1
+        return not in_single and not in_double
+    
+    redirect_pos = -1
+    redirect_op = None
+    
+    # Check for append operators first (2>>, 1>>, >>)
+    for i in range(len(cmd_line) - 2, -1, -1):
+        if cmd_line[i:i+3] == '2>>' and is_outside_quotes(i, cmd_line):
+            redirect_pos = i
+            redirect_op = '2>>'
+            redirect_stderr = True
+            redirect_append = True
+            break
+    
+    if redirect_pos == -1:
+        for i in range(len(cmd_line) - 2, -1, -1):
+            if cmd_line[i:i+3] == '1>>' and is_outside_quotes(i, cmd_line):
+                redirect_pos = i
+                redirect_op = '1>>'
+                redirect_stderr = False
+                redirect_append = True
+                break
+    
+    if redirect_pos == -1:
+        for i in range(len(cmd_line) - 1, -1, -1):
+            if cmd_line[i:i+2] == '>>' and is_outside_quotes(i, cmd_line):
+                redirect_pos = i
+                redirect_op = '>>'
+                redirect_stderr = False
+                redirect_append = True
+                break
+    
+    # Check for redirect operators (2>, 1>, >)
+    if redirect_pos == -1:
+        for i in range(len(cmd_line) - 1, -1, -1):
+            if cmd_line[i:i+2] == '2>' and is_outside_quotes(i, cmd_line):
+                redirect_pos = i
+                redirect_op = '2>'
+                redirect_stderr = True
+                redirect_append = False
+                break
+    
+    if redirect_pos == -1:
+        for i in range(len(cmd_line) - 1, -1, -1):
+            if cmd_line[i:i+2] == '1>' and is_outside_quotes(i, cmd_line):
+                redirect_pos = i
+                redirect_op = '1>'
+                redirect_stderr = False
+                redirect_append = False
+                break
+    
+    if redirect_pos == -1:
+        for i in range(len(cmd_line) - 1, -1, -1):
+            if cmd_line[i] == '>' and is_outside_quotes(i, cmd_line):
+                if i + 1 < len(cmd_line) and cmd_line[i+1] == '>':
+                    continue
+                redirect_pos = i
+                redirect_op = '>'
+                redirect_stderr = False
+                redirect_append = False
+                break
+    
+    if redirect_pos != -1:
+        cmd_part = cmd_line[:redirect_pos].strip()
+        redirect_file = cmd_line[redirect_pos + len(redirect_op):].strip()
+        if redirect_file.startswith('"') and redirect_file.endswith('"'):
+            redirect_file = redirect_file[1:-1]
+        elif redirect_file.startswith("'") and redirect_file.endswith("'"):
+            redirect_file = redirect_file[1:-1]
+        return cmd_part, redirect_file, redirect_stderr, redirect_append
+    
+    return cmd_line, None, False, False
+
 def main():
     while True:
         try:
@@ -19,17 +280,9 @@ def main():
             if not line.strip():
                 continue
             
-            # Handle redirection
-            redirect_file = None
-            redirect_stderr = False  # True for 2> or 2>>, False for 1>, 1>>, >, or >>
-            redirect_append = False  # True for >>, 1>>, or 2>>, False for >, 1>, or 2>
-            # Find redirection operator from right to left, checking if it's outside quotes
-            redirect_pos = -1
-            redirect_op = None
-            
             # Helper function to check if position is outside quotes
-            def is_outside_quotes(pos):
-                before = line[:pos]
+            def is_outside_quotes(pos, text):
+                before = text[:pos]
                 in_single = False
                 in_double = False
                 j = 0
@@ -44,192 +297,53 @@ def main():
                     j += 1
                 return not in_single and not in_double
             
-            # Check for append operators first (2>>, 1>>, >>)
-            # Check for 2>> (append stderr)
-            for i in range(len(line) - 2, -1, -1):
-                if line[i:i+3] == '2>>' and is_outside_quotes(i):
-                    redirect_pos = i
-                    redirect_op = '2>>'
-                    redirect_stderr = True
-                    redirect_append = True
-                    break
-            
-            # Check for 1>> (append stdout with explicit fd)
-            if redirect_pos == -1:
-                for i in range(len(line) - 2, -1, -1):
-                    if line[i:i+3] == '1>>' and is_outside_quotes(i):
-                        redirect_pos = i
-                        redirect_op = '1>>'
-                        redirect_stderr = False
-                        redirect_append = True
+            # Parse pipelines first
+            pipeline_commands = []
+            current_pos = 0
+            while current_pos < len(line):
+                pipe_pos = -1
+                for i in range(current_pos, len(line)):
+                    if line[i] == '|' and is_outside_quotes(i, line):
+                        pipe_pos = i
                         break
-            
-            # Check for >> (append stdout)
-            if redirect_pos == -1:
-                for i in range(len(line) - 1, -1, -1):
-                    if line[i:i+2] == '>>' and is_outside_quotes(i):
-                        redirect_pos = i
-                        redirect_op = '>>'
-                        redirect_stderr = False
-                        redirect_append = True
-                        break
-            
-            # Check for redirect operators (2>, 1>, >)
-            # Check for 2> (stderr redirection)
-            if redirect_pos == -1:
-                for i in range(len(line) - 1, -1, -1):
-                    if line[i:i+2] == '2>' and is_outside_quotes(i):
-                        redirect_pos = i
-                        redirect_op = '2>'
-                        redirect_stderr = True
-                        redirect_append = False
-                        break
-            
-            # Check for 1> (stdout redirection with explicit fd)
-            if redirect_pos == -1:
-                for i in range(len(line) - 1, -1, -1):
-                    if line[i:i+2] == '1>' and is_outside_quotes(i):
-                        redirect_pos = i
-                        redirect_op = '1>'
-                        redirect_stderr = False
-                        redirect_append = False
-                        break
-            
-            # Check for > (stdout redirection)
-            if redirect_pos == -1:
-                for i in range(len(line) - 1, -1, -1):
-                    if line[i] == '>' and is_outside_quotes(i):
-                        # Make sure it's not part of >>
-                        if i + 1 < len(line) and line[i+1] == '>':
-                            continue
-                        redirect_pos = i
-                        redirect_op = '>'
-                        redirect_stderr = False
-                        redirect_append = False
-                        break
-            
-            if redirect_pos != -1:
-                line_part = line[:redirect_pos].strip()
-                redirect_file = line[redirect_pos + len(redirect_op):].strip()
-                line = line_part
-                # Remove quotes if present
-                if redirect_file.startswith('"') and redirect_file.endswith('"'):
-                    redirect_file = redirect_file[1:-1]
-                elif redirect_file.startswith("'") and redirect_file.endswith("'"):
-                    redirect_file = redirect_file[1:-1]
-            
-            args = shlex.split(line)
-            if not args:
-                continue
-            command = args[0]
-
-            if command == "exit":
-                sys.exit(0)
-            elif command == "echo":
-                output = " ".join(args[1:])
-                # Only redirect if it's stdout redirection (not stderr)
-                if redirect_file and not redirect_stderr:
-                    dir_path = os.path.dirname(redirect_file)
-                    if dir_path:
-                        os.makedirs(dir_path, exist_ok=True)
-                    mode = 'a' if redirect_append else 'w'
-                    with open(redirect_file, mode) as f:
-                        f.write(output + '\n')
-                elif redirect_file and redirect_stderr:
-                    # Create the file for stderr redirection, but output goes to stdout
-                    dir_path = os.path.dirname(redirect_file)
-                    if dir_path:
-                        os.makedirs(dir_path, exist_ok=True)
-                    if not redirect_append:
-                        open(redirect_file, 'w').close()  # Create empty file
-                    print(output)
-                else:
-                    print(output)
-            elif command == "type":
-                if len(args) < 2:
-                    continue
-                target = args[1]
-                # Check if it's a builtin first
-                builtins = ["echo", "exit", "type", "pwd", "cd"]
-                if target in builtins:
-                    output = f"{target} is a shell builtin"
-                else:
-                    full_path = find_executable(target)
-                    if full_path:
-                        output = full_path
-                    else:
-                        output = f"{target}: not found"
                 
-                # Only redirect if it's stdout redirection (not stderr)
-                if redirect_file and not redirect_stderr:
-                    dir_path = os.path.dirname(redirect_file)
-                    if dir_path:
-                        os.makedirs(dir_path, exist_ok=True)
-                    mode = 'a' if redirect_append else 'w'
-                    with open(redirect_file, mode) as f:
-                        f.write(output + '\n')
-                elif redirect_file and redirect_stderr:
-                    # Create the file for stderr redirection, but output goes to stdout
-                    dir_path = os.path.dirname(redirect_file)
-                    if dir_path:
-                        os.makedirs(dir_path, exist_ok=True)
-                    if not redirect_append:
-                        open(redirect_file, 'w').close()  # Create empty file
-                    print(output)
+                if pipe_pos == -1:
+                    pipeline_commands.append(line[current_pos:].strip())
+                    break
                 else:
-                    print(output)
-            elif command == "pwd":
-                output = os.getcwd()
-                # Only redirect if it's stdout redirection (not stderr)
-                if redirect_file and not redirect_stderr:
-                    dir_path = os.path.dirname(redirect_file)
-                    if dir_path:
-                        os.makedirs(dir_path, exist_ok=True)
-                    mode = 'a' if redirect_append else 'w'
-                    with open(redirect_file, mode) as f:
-                        f.write(output + '\n')
-                elif redirect_file and redirect_stderr:
-                    # Create the file for stderr redirection, but output goes to stdout
-                    dir_path = os.path.dirname(redirect_file)
-                    if dir_path:
-                        os.makedirs(dir_path, exist_ok=True)
-                    if not redirect_append:
-                        open(redirect_file, 'w').close()  # Create empty file
-                    print(output)
+                    pipeline_commands.append(line[current_pos:pipe_pos].strip())
+                    current_pos = pipe_pos + 1
+            
+            # Execute pipeline
+            stdin_data = None
+            for idx, cmd_line in enumerate(pipeline_commands):
+                is_last = (idx == len(pipeline_commands) - 1)
+                
+                # Parse redirection (only on last command)
+                if is_last:
+                    cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(cmd_line)
                 else:
-                    print(output)
-            elif command == "cd":
-                if len(args) > 1:
-                    path = os.path.expanduser(args[1])
-                    try:
-                        os.chdir(path)
-                    except OSError:
-                        print(f"cd: {args[1]}: No such file or directory")
-                else:
-                    # cd without arguments goes to home directory
-                    home = os.path.expanduser("~")
-                    try:
-                        os.chdir(home)
-                    except OSError:
-                        pass
-            else:
-                full_path = find_executable(command)
-                if full_path:
-                    # Use full_path to locate executable, but pass command name as argv[0]
-                    if redirect_file:
-                        dir_path = os.path.dirname(redirect_file)
-                        if dir_path:
-                            os.makedirs(dir_path, exist_ok=True)
-                        mode = 'a' if redirect_append else 'w'
-                        with open(redirect_file, mode) as f:
-                            if redirect_stderr:
-                                subprocess.run([command] + args[1:], executable=full_path, stderr=f)
-                            else:
-                                subprocess.run([command] + args[1:], executable=full_path, stdout=f)
-                    else:
-                        subprocess.run([command] + args[1:], executable=full_path)
-                else:
-                    print(f"{command}: command not found")
+                    cmd_part, redirect_file, redirect_stderr, redirect_append = cmd_line, None, False, False
+                
+                args = shlex.split(cmd_part)
+                if not args:
+                    continue
+                command = args[0]
+                
+                # Execute command
+                output = execute_command(command, args, redirect_file if is_last else None, 
+                                       redirect_stderr if is_last else False, 
+                                       redirect_append if is_last else False, 
+                                       stdin_data, should_print=is_last)
+                
+                # For pipeline, pass output to next command
+                if not is_last:
+                    stdin_data = output
+                elif not redirect_file and output and command not in ["echo", "type", "pwd"]:
+                    # Last command without redirection - print output (for external commands)
+                    # Builtin commands already print their output
+                    sys.stdout.buffer.write(output)
+                    sys.stdout.buffer.flush()
         except EOFError:
             break
 
