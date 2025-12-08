@@ -126,6 +126,13 @@ def main():
                         os.makedirs(dir_path, exist_ok=True)
                     with open(redirect_file, 'w') as f:
                         f.write(output + '\n')
+                elif redirect_file and redirect_stderr:
+                    # Create the file for stderr redirection, but output goes to stdout
+                    dir_path = os.path.dirname(redirect_file)
+                    if dir_path:
+                        os.makedirs(dir_path, exist_ok=True)
+                    open(redirect_file, 'w').close()  # Create empty file
+                    print(output)
                 else:
                     print(output)
             elif command == "type":
@@ -150,6 +157,13 @@ def main():
                         os.makedirs(dir_path, exist_ok=True)
                     with open(redirect_file, 'w') as f:
                         f.write(output + '\n')
+                elif redirect_file and redirect_stderr:
+                    # Create the file for stderr redirection, but output goes to stdout
+                    dir_path = os.path.dirname(redirect_file)
+                    if dir_path:
+                        os.makedirs(dir_path, exist_ok=True)
+                    open(redirect_file, 'w').close()  # Create empty file
+                    print(output)
                 else:
                     print(output)
             elif command == "pwd":
@@ -161,6 +175,13 @@ def main():
                         os.makedirs(dir_path, exist_ok=True)
                     with open(redirect_file, 'w') as f:
                         f.write(output + '\n')
+                elif redirect_file and redirect_stderr:
+                    # Create the file for stderr redirection, but output goes to stdout
+                    dir_path = os.path.dirname(redirect_file)
+                    if dir_path:
+                        os.makedirs(dir_path, exist_ok=True)
+                    open(redirect_file, 'w').close()  # Create empty file
+                    print(output)
                 else:
                     print(output)
             elif command == "cd":
