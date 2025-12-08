@@ -29,11 +29,16 @@ def main():
                 if len(args) < 2:
                     continue
                 target = args[1]
-                full_path = find_executable(target)
-                if full_path:
-                    print(full_path)
+                # Check if it's a builtin first
+                builtins = ["echo", "exit", "type", "pwd", "cd"]
+                if target in builtins:
+                    print(f"{target} is a shell builtin")
                 else:
-                    print(f"{target}: not found")
+                    full_path = find_executable(target)
+                    if full_path:
+                        print(full_path)
+                    else:
+                        print(f"{target}: not found")
             elif command == "pwd":
                 print(os.getcwd())
             elif command == "cd":
