@@ -21,16 +21,66 @@ def main():
             
             # Handle redirection
             redirect_file = None
-            if '>' in line:
-                parts = line.split('>', 1)
-                if len(parts) == 2:
-                    line = parts[0].strip()
-                    redirect_file = parts[1].strip()
-                    # Remove quotes if present
-                    if redirect_file.startswith('"') and redirect_file.endswith('"'):
-                        redirect_file = redirect_file[1:-1]
-                    elif redirect_file.startswith("'") and redirect_file.endswith("'"):
-                        redirect_file = redirect_file[1:-1]
+            # Find redirection operator (1> or >) from right to left, checking if it's outside quotes
+            redirect_pos = -1
+            redirect_op = None
+            
+            # Check for 1> first (stdout redirection with explicit fd)
+            for i in range(len(line) - 1, -1, -1):
+                if line[i:i+2] == '1>':
+                    # Check if we're outside quotes
+                    before = line[:i]
+                    # Count unescaped quotes
+                    in_single = False
+                    in_double = False
+                    j = 0
+                    while j < len(before):
+                        if before[j] == '\\' and j + 1 < len(before):
+                            j += 2
+                            continue
+                        if before[j] == "'" and not in_double:
+                            in_single = not in_single
+                        elif before[j] == '"' and not in_single:
+                            in_double = not in_double
+                        j += 1
+                    if not in_single and not in_double:
+                        redirect_pos = i
+                        redirect_op = '1>'
+                        break
+            
+            # If no 1> found, check for >
+            if redirect_pos == -1:
+                for i in range(len(line) - 1, -1, -1):
+                    if line[i] == '>':
+                        # Check if we're outside quotes
+                        before = line[:i]
+                        # Count unescaped quotes
+                        in_single = False
+                        in_double = False
+                        j = 0
+                        while j < len(before):
+                            if before[j] == '\\' and j + 1 < len(before):
+                                j += 2
+                                continue
+                            if before[j] == "'" and not in_double:
+                                in_single = not in_single
+                            elif before[j] == '"' and not in_single:
+                                in_double = not in_double
+                            j += 1
+                        if not in_single and not in_double:
+                            redirect_pos = i
+                            redirect_op = '>'
+                            break
+            
+            if redirect_pos != -1:
+                line_part = line[:redirect_pos].strip()
+                redirect_file = line[redirect_pos + len(redirect_op):].strip()
+                line = line_part
+                # Remove quotes if present
+                if redirect_file.startswith('"') and redirect_file.endswith('"'):
+                    redirect_file = redirect_file[1:-1]
+                elif redirect_file.startswith("'") and redirect_file.endswith("'"):
+                    redirect_file = redirect_file[1:-1]
             
             args = shlex.split(line)
             if not args:
