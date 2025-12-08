@@ -193,12 +193,7 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                     pass
                 stdout_target.close()
             if stderr_target:
-                try:
-                    stderr_target.flush()
-                    os.fsync(stderr_target.fileno())
-                except:
-                    pass
-                stderr_target.close()
+                stderr_target.close()  # Just close it, let OS handle flushing
 
             # Return output for pipeline or print if no redirection
             if stdout_param == subprocess.PIPE:
