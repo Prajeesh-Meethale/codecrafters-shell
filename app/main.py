@@ -156,8 +156,7 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             subprocess_args = {
                 'args': [command] + args[1:],
                 'executable': full_path,
-                'stdout': stdout_param,
-                'stderr': stderr_target.fileno() if stderr_target else None
+                'stdout': stdout_param
             }
 
             # Ensure stderr is redirected to file when requested
@@ -170,16 +169,32 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             if stdin_data is not None:
                 subprocess_args['input'] = stdin_data
 
-            # Use Popen for better file descriptor control
-            proc = subprocess.Popen(**subprocess_args)
-            proc.wait()  # Wait for process to complete
+            # Handle stderr separately - pass file descriptor, not file object
+            if stderr_target:
+                stderr_target.close()  # Close Python's wrapper
+                # Reopen the file descriptor in raw mode
+                stderr_fd = os.open(redirect_file, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+                subprocess_args['stderr'] = stderr_fd
+                pass_fds = (stderr_fd,)
+            else:
+                pass_fds = ()
+                subprocess_args['stderr'] = None
+
+            proc = subprocess.Popen(**subprocess_args, pass_fds=pass_fds)
+            proc.wait()
             result = proc  # For compatibility with existing code
+
+            # Close the raw file descriptor if we opened one
+            if stderr_target:
+                try:
+                    os.close(stderr_fd)
+                except:
+                    pass
+                stderr_target = None  # Mark as closed
 
             # Close files after subprocess completes
             if stdout_target:
                 stdout_target.close()
-            if stderr_target:
-                stderr_target.close()
 
             # Return output for pipeline or print if no redirection
             if stdout_param == subprocess.PIPE:
