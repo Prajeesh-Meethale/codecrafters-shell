@@ -77,24 +77,19 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
     
     elif command == "echo":
         output = " ".join(args[1:]) + '\n'
-        # For builtins: ignore 2>> and >> stderr redirects
-        # Just print to stdout unless it's stdout redirect (1> or >)
-        if redirect_stderr:
-            # 2> or 2>> - ignore for echo, just print
-            sys.stdout.write(output)
-            sys.stdout.flush()
-        elif redirect_file and not redirect_stderr:
-            # 1> or >> - redirect stdout
+        
+        # For builtins with 2> or 2>> redirection, create the file/directory even if empty
+        if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
+            # Create empty file or truncate/append if it exists
             mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode) as f:
-                f.write(output)
-        else:
-            # No redirect
-            sys.stdout.write(output)
-            sys.stdout.flush()
+            open(redirect_file, mode).close()
+        
+        # Print to stdout
+        sys.stdout.write(output)
+        sys.stdout.flush()
         return b""
     
     elif command == "type":
@@ -109,38 +104,34 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 output = f"{full_path}\n"
             else:
                 output = f"{target}: not found\n"
-        # Same as echo - ignore 2>> for builtins
-        if redirect_stderr:
-            sys.stdout.write(output)
-            sys.stdout.flush()
-        elif redirect_file and not redirect_stderr:
+        # For builtins with 2> or 2>> redirection, create the file/directory even if empty
+        if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
+            # Create empty file or truncate/append if it exists
             mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode) as f:
-                f.write(output)
-        else:
-            sys.stdout.write(output)
-            sys.stdout.flush()
+            open(redirect_file, mode).close()
+        
+        # Print to stdout
+        sys.stdout.write(output)
+        sys.stdout.flush()
         return b""
     
     elif command == "pwd":
         output = os.getcwd() + '\n'
-        # Same as echo - ignore 2>> for builtins
-        if redirect_stderr:
-            sys.stdout.write(output)
-            sys.stdout.flush()
-        elif redirect_file and not redirect_stderr:
+        # For builtins with 2> or 2>> redirection, create the file/directory even if empty
+        if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
+            # Create empty file or truncate/append if it exists
             mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode) as f:
-                f.write(output)
-        else:
-            sys.stdout.write(output)
-            sys.stdout.flush()
+            open(redirect_file, mode).close()
+        
+        # Print to stdout
+        sys.stdout.write(output)
+        sys.stdout.flush()
         return b""
     
     elif command == "cd":
