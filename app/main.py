@@ -127,71 +127,32 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
     else:
         full_path = find_executable(command)
         if full_path:
-            # Use full_path to locate executable, but pass command name as argv[0]
-            stdout_target = None
-            stderr_target = None
-            
+            # Build the full command line
+            full_command_line = ' '.join([command] + args[1:])
+
+            # If there's redirection, use shell to handle it natively
             if redirect_file:
-                dir_path = os.path.dirname(redirect_file)
-                if dir_path:
-                    os.makedirs(dir_path, exist_ok=True)
                 if redirect_stderr:
-                    mode = 'a' if redirect_append else 'w'
-                    stderr_target = open(redirect_file, mode)
+                    op = '2>>' if redirect_append else '2>'
                 else:
-                    mode = 'ab' if redirect_append else 'wb'
-                    stdout_target = open(redirect_file, mode, buffering=0)
-            
-            # Determine stdout handling
-            if stdout_target:
-                stdout_param = stdout_target
-            elif redirect_file and not redirect_stderr:
-                stdout_param = None  # Will be redirected to file
-            elif redirect_stderr:
-                stdout_param = None  # Go to terminal when stderr is redirected
+                    op = '>>' if redirect_append else '>'
+                full_command_line = f"{full_command_line} {op} {redirect_file}"
+                subprocess.call(full_command_line, shell=True)
+                return b""
             else:
-                stdout_param = subprocess.PIPE  # Capture for pipeline or display
-            
-            # Build subprocess arguments
-            subprocess_args = {
-                'args': [command] + args[1:],
-                'executable': full_path,
-                'stdout': stdout_param
-            }
-
-            # Ensure stderr is redirected to file when requested
-            if redirect_stderr and redirect_file and stderr_target is None:
-                mode = 'ab' if redirect_append else 'wb'
-                stderr_target = open(redirect_file, mode)
-                subprocess_args['stderr'] = stderr_target.fileno()
-
-            # Use input parameter if stdin_data is provided, otherwise don't set stdin
-            if stdin_data is not None:
-                subprocess_args['input'] = stdin_data
-
-            # Handle stderr using the file object directly
-            if stderr_target:
-                subprocess_args['stderr'] = stderr_target
-            else:
-                subprocess_args['stderr'] = None
-
-            proc = subprocess.Popen(**subprocess_args)
-            proc.wait()
-            result = proc  # For compatibility with existing code
-
-            # Now it's safe to close after process completes
-            if stderr_target:
-                stderr_target.close()
-
-            # Close files after subprocess completes
-            if stdout_target:
-                stdout_target.close()
-
-            # Return output for pipeline or print if no redirection
-            if stdout_param == subprocess.PIPE:
-                output = result.stdout if result.stdout else b""
-                return output
-            return b""
+                # No redirection - capture output if needed for pipeline
+                if 'stdout_param' in locals() and stdout_param == subprocess.PIPE:
+                    result = subprocess.run(
+                        [command] + args[1:],
+                        executable=full_path,
+                        stdout=subprocess.PIPE,
+                        stderr=None
+                    )
+                    return result.stdout if result.stdout else b""
+                else:
+                    # Just execute without capturing
+                    subprocess.call(full_command_line, shell=True)
+                    return b""
         else:
             print(f"{command}: command not found")
             return b""
