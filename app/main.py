@@ -133,12 +133,10 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 dir_path = os.path.dirname(redirect_file)
                 if dir_path:
                     os.makedirs(dir_path, exist_ok=True)
-                # Use binary mode for stdout, text mode for stderr
+                mode = 'ab' if redirect_append else 'wb'
                 if redirect_stderr:
-                    mode = 'a' if redirect_append else 'w'
-                    stderr_target = open(redirect_file, mode, encoding='utf-8', buffering=1)
+                    stderr_target = open(redirect_file, mode, buffering=0)
                 else:
-                    mode = 'ab' if redirect_append else 'wb'
                     stdout_target = open(redirect_file, mode, buffering=0)
             
             # Determine stdout handling
@@ -368,12 +366,11 @@ def main():
                         dir_path = os.path.dirname(redirect_file)
                         if dir_path:
                             os.makedirs(dir_path, exist_ok=True)
-                        if redirect_stderr:
-                            mode = 'a' if redirect_append else 'w'
-                            stderr_target = open(redirect_file, mode, encoding='utf-8', buffering=1)
-                        else:
-                            mode = 'ab' if redirect_append else 'wb'
-                            stdout_target = open(redirect_file, mode, buffering=0)
+                    mode = 'ab' if redirect_append else 'wb'
+                    if redirect_stderr:
+                        stderr_target = open(redirect_file, mode, buffering=0)
+                    else:
+                        stdout_target = open(redirect_file, mode, buffering=0)
 
                     # Determine stdout
                     if stdout_target:
