@@ -136,6 +136,8 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 if redirect_stderr:
                     mode = 'ab' if redirect_append else 'wb'
                     stderr_target = open(redirect_file, mode, buffering=0)
+                    # DEBUG: Print what we're doing
+                    print(f"[DEBUG] Opened {redirect_file} for stderr, fd={stderr_target.fileno()}", file=sys.stderr)
                 else:
                     mode = 'ab' if redirect_append else 'wb'
                     stdout_target = open(redirect_file, mode, buffering=0)
@@ -157,6 +159,9 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 'stdout': stdout_param,
                 'stderr': stderr_target.fileno() if stderr_target else None
             }
+            # DEBUG: Print subprocess args
+            if redirect_stderr:
+                print(f"[DEBUG] subprocess_args stderr={subprocess_args['stderr']}", file=sys.stderr)
 
             # Ensure stderr is redirected to file when requested
             if redirect_stderr and redirect_file and stderr_target is None:
@@ -173,6 +178,11 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             proc = subprocess.Popen(**subprocess_args)
             proc.wait()  # Wait for process to complete
             result = proc  # For compatibility with existing code
+
+            # DEBUG: Check file after process completes
+            if stderr_target:
+                current_pos = stderr_target.tell()
+                print(f"[DEBUG] After subprocess, file position={current_pos}", file=sys.stderr)
 
             # Close files after subprocess completes
             if stdout_target:
