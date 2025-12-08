@@ -139,13 +139,13 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 dir_path = os.path.dirname(redirect_file)
                 if dir_path:
                     os.makedirs(dir_path, exist_ok=True)
-                mode = 'ab' if redirect_append else 'wb'
+                # Use binary mode for stdout, text mode for stderr
                 if redirect_stderr:
-                    # Open in binary mode for stderr redirection, unbuffered
-                    stderr_target = open(redirect_file, mode, buffering=0)  # Unbuffered, binary mode
+                    mode = 'a' if redirect_append else 'w'
+                    stderr_target = open(redirect_file, mode, encoding='utf-8', buffering=1)
                 else:
-                    # Open in binary mode for stdout redirection, unbuffered
-                    stdout_target = open(redirect_file, mode, buffering=0)  # Unbuffered, binary mode
+                    mode = 'ab' if redirect_append else 'wb'
+                    stdout_target = open(redirect_file, mode, buffering=0)
             
             # Determine stdout handling
             if stdout_target:
@@ -164,33 +164,34 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 'stdout': stdout_param,
                 'stderr': stderr_target
             }
-            
+
             # Use input parameter if stdin_data is provided, otherwise don't set stdin
             if stdin_data is not None:
                 subprocess_args['input'] = stdin_data
             # Don't set stdin parameter when using input
-            
+
             result = subprocess.run(**subprocess_args)
 
-            # Ensure files are flushed and closed
+            # Ensure files are flushed and closed immediately
             if stdout_target:
                 try:
                     stdout_target.flush()
+                    os.fsync(stdout_target.fileno())
                 except:
                     pass
                 stdout_target.close()
             if stderr_target:
                 try:
+                    # Force flush stderr file immediately
                     stderr_target.flush()
+                    os.fsync(stderr_target.fileno())
                 except:
                     pass
                 stderr_target.close()
-            
+
             # Return output for pipeline or print if no redirection
             if stdout_param == subprocess.PIPE:
                 output = result.stdout if result.stdout else b""
-                # If no redirect_file, this is either pipeline intermediate or last command
-                # For last command, we'll print it in main()
                 return output
             return b""
         else:
@@ -373,10 +374,11 @@ def main():
                         dir_path = os.path.dirname(redirect_file)
                         if dir_path:
                             os.makedirs(dir_path, exist_ok=True)
-                        mode = 'ab' if redirect_append else 'wb'
                         if redirect_stderr:
-                            stderr_target = open(redirect_file, mode, buffering=0)
+                            mode = 'a' if redirect_append else 'w'
+                            stderr_target = open(redirect_file, mode, encoding='utf-8', buffering=1)
                         else:
+                            mode = 'ab' if redirect_append else 'wb'
                             stdout_target = open(redirect_file, mode, buffering=0)
 
                     # Determine stdout
