@@ -45,8 +45,8 @@ def main():
             else:
                 full_path = find_executable(command)
                 if full_path:
-                    # argv[0] will be the executable name, path used only to locate
-                    subprocess.run([full_path] + args[1:])
+                    # Use full_path to locate executable, but pass command name as argv[0]
+                    subprocess.run([command] + args[1:], executable=full_path)
                 else:
                     print(f"{command}: command not found")
         except EOFError:
