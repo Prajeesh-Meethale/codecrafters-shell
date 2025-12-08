@@ -136,8 +136,8 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 if dir_path:
                     os.makedirs(dir_path, exist_ok=True)
                 if redirect_stderr:
-                    mode = 'ab' if redirect_append else 'wb'
-                    stderr_target = open(redirect_file, mode, buffering=0)
+                    mode = 'a' if redirect_append else 'w'
+                    stderr_target = open(redirect_file, mode)
                 else:
                     mode = 'ab' if redirect_append else 'wb'
                     stdout_target = open(redirect_file, mode, buffering=0)
