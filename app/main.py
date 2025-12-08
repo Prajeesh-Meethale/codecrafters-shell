@@ -21,84 +21,92 @@ def main():
             
             # Handle redirection
             redirect_file = None
-            redirect_stderr = False  # True for 2>, False for 1> or >
-            # Find redirection operator (2>, 1>, or >) from right to left, checking if it's outside quotes
+            redirect_stderr = False  # True for 2> or 2>>, False for 1>, 1>>, >, or >>
+            redirect_append = False  # True for >>, 1>>, or 2>>, False for >, 1>, or 2>
+            # Find redirection operator from right to left, checking if it's outside quotes
             redirect_pos = -1
             redirect_op = None
             
-            # Check for 2> first (stderr redirection)
-            for i in range(len(line) - 1, -1, -1):
-                if line[i:i+2] == '2>':
-                    # Check if we're outside quotes
-                    before = line[:i]
-                    # Count unescaped quotes
-                    in_single = False
-                    in_double = False
-                    j = 0
-                    while j < len(before):
-                        if before[j] == '\\' and j + 1 < len(before):
-                            j += 2
-                            continue
-                        if before[j] == "'" and not in_double:
-                            in_single = not in_single
-                        elif before[j] == '"' and not in_single:
-                            in_double = not in_double
-                        j += 1
-                    if not in_single and not in_double:
+            # Helper function to check if position is outside quotes
+            def is_outside_quotes(pos):
+                before = line[:pos]
+                in_single = False
+                in_double = False
+                j = 0
+                while j < len(before):
+                    if before[j] == '\\' and j + 1 < len(before):
+                        j += 2
+                        continue
+                    if before[j] == "'" and not in_double:
+                        in_single = not in_single
+                    elif before[j] == '"' and not in_single:
+                        in_double = not in_double
+                    j += 1
+                return not in_single and not in_double
+            
+            # Check for append operators first (2>>, 1>>, >>)
+            # Check for 2>> (append stderr)
+            for i in range(len(line) - 2, -1, -1):
+                if line[i:i+3] == '2>>' and is_outside_quotes(i):
+                    redirect_pos = i
+                    redirect_op = '2>>'
+                    redirect_stderr = True
+                    redirect_append = True
+                    break
+            
+            # Check for 1>> (append stdout with explicit fd)
+            if redirect_pos == -1:
+                for i in range(len(line) - 2, -1, -1):
+                    if line[i:i+3] == '1>>' and is_outside_quotes(i):
+                        redirect_pos = i
+                        redirect_op = '1>>'
+                        redirect_stderr = False
+                        redirect_append = True
+                        break
+            
+            # Check for >> (append stdout)
+            if redirect_pos == -1:
+                for i in range(len(line) - 1, -1, -1):
+                    if line[i:i+2] == '>>' and is_outside_quotes(i):
+                        redirect_pos = i
+                        redirect_op = '>>'
+                        redirect_stderr = False
+                        redirect_append = True
+                        break
+            
+            # Check for redirect operators (2>, 1>, >)
+            # Check for 2> (stderr redirection)
+            if redirect_pos == -1:
+                for i in range(len(line) - 1, -1, -1):
+                    if line[i:i+2] == '2>' and is_outside_quotes(i):
                         redirect_pos = i
                         redirect_op = '2>'
                         redirect_stderr = True
+                        redirect_append = False
                         break
             
             # Check for 1> (stdout redirection with explicit fd)
             if redirect_pos == -1:
                 for i in range(len(line) - 1, -1, -1):
-                    if line[i:i+2] == '1>':
-                        # Check if we're outside quotes
-                        before = line[:i]
-                        # Count unescaped quotes
-                        in_single = False
-                        in_double = False
-                        j = 0
-                        while j < len(before):
-                            if before[j] == '\\' and j + 1 < len(before):
-                                j += 2
-                                continue
-                            if before[j] == "'" and not in_double:
-                                in_single = not in_single
-                            elif before[j] == '"' and not in_single:
-                                in_double = not in_double
-                            j += 1
-                        if not in_single and not in_double:
-                            redirect_pos = i
-                            redirect_op = '1>'
-                            redirect_stderr = False
-                            break
+                    if line[i:i+2] == '1>' and is_outside_quotes(i):
+                        redirect_pos = i
+                        redirect_op = '1>'
+                        redirect_stderr = False
+                        redirect_append = False
+                        break
             
-            # If no 2> or 1> found, check for >
+            # Check for > (stdout redirection)
             if redirect_pos == -1:
                 for i in range(len(line) - 1, -1, -1):
-                    if line[i] == '>':
-                        # Check if we're outside quotes
-                        before = line[:i]
-                        # Count unescaped quotes
-                        in_single = False
-                        in_double = False
-                        j = 0
-                        while j < len(before):
-                            if before[j] == '\\' and j + 1 < len(before):
-                                j += 2
-                                continue
-                            if before[j] == "'" and not in_double:
-                                in_single = not in_single
-                            elif before[j] == '"' and not in_single:
-                                in_double = not in_double
-                            j += 1
-                        if not in_single and not in_double:
-                            redirect_pos = i
-                            redirect_op = '>'
-                            redirect_stderr = False
-                            break
+                    if line[i] == '>' and is_outside_quotes(i):
+                        # Make sure it's not part of >>
+                        if i + 1 < len(line) and line[i+1] == '>':
+                            continue
+                        redirect_pos = i
+                        redirect_op = '>'
+                        redirect_stderr = False
+                        redirect_append = False
+                        break
             
             if redirect_pos != -1:
                 line_part = line[:redirect_pos].strip()
@@ -124,14 +132,16 @@ def main():
                     dir_path = os.path.dirname(redirect_file)
                     if dir_path:
                         os.makedirs(dir_path, exist_ok=True)
-                    with open(redirect_file, 'w') as f:
+                    mode = 'a' if redirect_append else 'w'
+                    with open(redirect_file, mode) as f:
                         f.write(output + '\n')
                 elif redirect_file and redirect_stderr:
                     # Create the file for stderr redirection, but output goes to stdout
                     dir_path = os.path.dirname(redirect_file)
                     if dir_path:
                         os.makedirs(dir_path, exist_ok=True)
-                    open(redirect_file, 'w').close()  # Create empty file
+                    if not redirect_append:
+                        open(redirect_file, 'w').close()  # Create empty file
                     print(output)
                 else:
                     print(output)
@@ -155,14 +165,16 @@ def main():
                     dir_path = os.path.dirname(redirect_file)
                     if dir_path:
                         os.makedirs(dir_path, exist_ok=True)
-                    with open(redirect_file, 'w') as f:
+                    mode = 'a' if redirect_append else 'w'
+                    with open(redirect_file, mode) as f:
                         f.write(output + '\n')
                 elif redirect_file and redirect_stderr:
                     # Create the file for stderr redirection, but output goes to stdout
                     dir_path = os.path.dirname(redirect_file)
                     if dir_path:
                         os.makedirs(dir_path, exist_ok=True)
-                    open(redirect_file, 'w').close()  # Create empty file
+                    if not redirect_append:
+                        open(redirect_file, 'w').close()  # Create empty file
                     print(output)
                 else:
                     print(output)
@@ -173,14 +185,16 @@ def main():
                     dir_path = os.path.dirname(redirect_file)
                     if dir_path:
                         os.makedirs(dir_path, exist_ok=True)
-                    with open(redirect_file, 'w') as f:
+                    mode = 'a' if redirect_append else 'w'
+                    with open(redirect_file, mode) as f:
                         f.write(output + '\n')
                 elif redirect_file and redirect_stderr:
                     # Create the file for stderr redirection, but output goes to stdout
                     dir_path = os.path.dirname(redirect_file)
                     if dir_path:
                         os.makedirs(dir_path, exist_ok=True)
-                    open(redirect_file, 'w').close()  # Create empty file
+                    if not redirect_append:
+                        open(redirect_file, 'w').close()  # Create empty file
                     print(output)
                 else:
                     print(output)
@@ -206,7 +220,8 @@ def main():
                         dir_path = os.path.dirname(redirect_file)
                         if dir_path:
                             os.makedirs(dir_path, exist_ok=True)
-                        with open(redirect_file, 'w') as f:
+                        mode = 'a' if redirect_append else 'w'
+                        with open(redirect_file, mode) as f:
                             if redirect_stderr:
                                 subprocess.run([command] + args[1:], executable=full_path, stderr=f)
                             else:
