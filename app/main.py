@@ -13,15 +13,22 @@ def find_executable(command):
 
 
 def execute_command(command, args, redirect_file=None, redirect_stderr=False, redirect_append=False, stdin_data=None, should_print=True):
-    """Execute a single command with optional redirection and stdin.
-    should_print: if True, print output for last command; if False, just return bytes for pipeline."""
+    """Execute a single command with optional redirection and stdin."""
+    builtins_list = ["exit", "echo", "type", "pwd", "cd"]
+
     if command == "exit":
         sys.exit(0)
     elif command == "echo":
         output = " ".join(args[1:]) + '\n'
-        output_bytes = output.encode()
-        # Only redirect if it's stdout redirection (not stderr)
-        if redirect_file and not redirect_stderr:
+        # IMPORTANT: For builtins, IGNORE 2>> - just print to stdout
+        if redirect_stderr:
+            # 2>> on builtin - ignore it, just print normally
+            if should_print:
+                sys.stdout.write(output)
+                sys.stdout.flush()
+            return output.encode()
+        elif redirect_file and not redirect_stderr:
+            # 1> or >> on builtin - redirect stdout
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
@@ -29,25 +36,111 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             with open(redirect_file, mode) as f:
                 f.write(output)
             return b""
-        elif redirect_file and redirect_stderr:
-            # Write to stderr file, never print to stdout
-            dir_path = os.path.dirname(redirect_file)
-            if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
-            mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode, encoding='utf-8') as f:
-                f.write(output)
-            return b""  # No output to terminal or pipeline
         else:
+            # No redirection
             if should_print:
-                sys.stdout.buffer.write(output_bytes)
-                sys.stdout.buffer.flush()
-            return output_bytes
+                sys.stdout.write(output)
+                sys.stdout.flush()
+            return output.encode()
     elif command == "type":
         if len(args) < 2:
             return b""
         target = args[1]
-        # Check if it's a builtin first
+        builtins = ["echo", "exit", "type", "pwd", "cd"]
+        if target in builtins:
+            output = f"{target} is a shell builtin\n"
+        else:
+            full_path = find_executable(target)
+            if full_path:
+                output = f"{full_path}\n"
+            else:
+                output = f"{target}: not found\n"
+        # IMPORTANT: For builtins, IGNORE 2>>
+        if redirect_stderr:
+            if should_print:
+                sys.stdout.write(output)
+                sys.stdout.flush()
+            return output.encode()
+        elif redirect_file and not redirect_stderr:
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode) as f:
+                f.write(output)
+            return b""
+        else:
+            if should_print:
+                sys.stdout.write(output)
+                sys.stdout.flush()
+            return output.encode()
+    elif command == "pwd":
+        output = os.getcwd() + '\n'
+        # IMPORTANT: For builtins, IGNORE 2>>
+        if redirect_stderr:
+            if should_print:
+                sys.stdout.write(output)
+                sys.stdout.flush()
+            return output.encode()
+        elif redirect_file and not redirect_stderr:
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode) as f:
+                f.write(output)
+            return b""
+        else:
+            if should_print:
+                sys.stdout.write(output)
+                sys.stdout.flush()
+            return output.encode()
+    elif command == "cd":
+        if len(args) > 1:
+            path = os.path.expanduser(args[1])
+            try:
+                os.chdir(path)
+            except OSError:
+                print(f"cd: {args[1]}: No such file or directory")
+        else:
+            home = os.path.expanduser("~")
+            try:
+                os.chdir(home)
+            except OSError:
+                pass
+        return b""
+    else:
+        # EXTERNAL COMMAND - use shell=True for redirection
+        full_path = find_executable(command)
+        if full_path:
+            # Build the full command line
+            full_command_line = ' '.join([command] + args[1:])
+            # If there's redirection, use shell to handle it natively
+            if redirect_file:
+                if redirect_stderr:
+                    op = '2>>' if redirect_append else '2>'
+                else:
+                    op = '>>' if redirect_append else '>'
+                full_command_line = f"{full_command_line} {op} {redirect_file}"
+                subprocess.call(full_command_line, shell=True)
+                return b""
+            else:
+                # No redirection - capture output if needed for pipeline
+                if not should_print:
+                    result = subprocess.run(
+                        [command] + args[1:],
+                        executable=full_path,
+                        stdout=subprocess.PIPE,
+                        stderr=None
+                    )
+                    return result.stdout if result.stdout else b""
+                else:
+                    # Just execute without capturing
+                    subprocess.call(full_command_line, shell=True)
+                    return b""
+        else:
+            print(f"{command}: command not found")
+            return b""
         builtins = ["echo", "exit", "type", "pwd", "cd"]
         if target in builtins:
             output = f"{target} is a shell builtin"
