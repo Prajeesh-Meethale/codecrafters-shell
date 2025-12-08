@@ -153,14 +153,20 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             else:
                 stdout_param = subprocess.PIPE  # Capture for pipeline or display
             
-            result = subprocess.run(
-                [command] + args[1:],
-                executable=full_path,
-                input=stdin_data,
-                stdout=stdout_param,
-                stderr=stderr_target,
-                stdin=subprocess.PIPE if stdin_data else None
-            )
+            # Build subprocess arguments
+            subprocess_args = {
+                'args': [command] + args[1:],
+                'executable': full_path,
+                'stdout': stdout_param,
+                'stderr': stderr_target
+            }
+            
+            # Use input parameter if stdin_data is provided, otherwise don't set stdin
+            if stdin_data is not None:
+                subprocess_args['input'] = stdin_data
+            # Don't set stdin parameter when using input
+            
+            result = subprocess.run(**subprocess_args)
             
             if stdout_target:
                 stdout_target.close()
