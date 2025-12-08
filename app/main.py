@@ -337,53 +337,27 @@ def main():
                 # Pipeline - execute commands with real pipes
                 processes = []
                 prev_read_fd = None
-                
+
                 for idx, cmd_line in enumerate(pipeline_commands):
                     is_last = (idx == len(pipeline_commands) - 1)
-                    
+
                     # Parse redirection (only on last command)
                     if is_last:
                         cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(cmd_line)
                     else:
                         cmd_part, redirect_file, redirect_stderr, redirect_append = cmd_line, None, False, False
-                    
+
                     args = shlex.split(cmd_part)
                     if not args:
                         continue
                     command = args[0]
-                    
-                    # Handle builtin commands in pipeline
-                    if command in ["echo", "type", "pwd", "cd", "exit"]:
-                        if is_last:
-                            # Last command - execute normally
-                            execute_command(command, args, redirect_file, redirect_stderr, redirect_append, None, should_print=True)
-                        else:
-                            # Intermediate builtin - capture output and write to pipe
-                            output = execute_command(command, args, None, False, False, None, should_print=False)
-                            if prev_read_fd:
-                                os.close(prev_read_fd)
-                            if output:
-                                # Create pipe and write output
-                                read_fd, write_fd = os.pipe()
-                                os.write(write_fd, output)
-                                os.close(write_fd)
-                                prev_read_fd = read_fd
-                        continue
-                    
-                    # External command
-                    full_path = find_executable(command)
-                    if not full_path:
-                        print(f"{command}: command not found")
-                        if prev_read_fd:
-                            os.close(prev_read_fd)
-                        break
-                    
+
                     # Create pipe for next command (if not last)
                     if not is_last:
                         read_fd, write_fd = os.pipe()
                     else:
                         read_fd, write_fd = None, None
-                    
+
                     # Setup stdout
                     stdout_target = None
                     stderr_target = None
@@ -393,10 +367,10 @@ def main():
                             os.makedirs(dir_path, exist_ok=True)
                         mode = 'a' if redirect_append else 'w'
                         if redirect_stderr:
-                            stderr_target = open(redirect_file, mode)
+                            stderr_target = open(redirect_file, mode + 't', buffering=1)
                         else:
-                            stdout_target = open(redirect_file, mode)
-                    
+                            stdout_target = open(redirect_file, mode + 't', buffering=1)
+
                     # Determine stdout
                     if stdout_target:
                         stdout_param = stdout_target
@@ -406,7 +380,33 @@ def main():
                         stdout_param = None  # Go to terminal
                     else:
                         stdout_param = subprocess.PIPE
-                    
+
+                    # Handle builtin commands in pipeline
+                    if command in ["echo", "type", "pwd", "cd", "exit"]:
+                        # Execute builtin synchronously and write output to pipe
+                        output = execute_command(command, args, None, False, False, None, should_print=False)
+                        if output:
+                            if write_fd:
+                                os.write(write_fd, output)
+                                os.close(write_fd)
+                            elif is_last:
+                                # Last builtin in pipeline - print output
+                                execute_command(command, args, redirect_file, redirect_stderr, redirect_append, None, should_print=True)
+                        if prev_read_fd:
+                            os.close(prev_read_fd)
+                        prev_read_fd = read_fd
+                        continue
+
+                    # External command
+                    full_path = find_executable(command)
+                    if not full_path:
+                        print(f"{command}: command not found")
+                        if prev_read_fd:
+                            os.close(prev_read_fd)
+                        if write_fd:
+                            os.close(write_fd)
+                        break
+
                     # Start process
                     proc = subprocess.Popen(
                         [command] + args[1:],
@@ -415,24 +415,36 @@ def main():
                         stdout=stdout_param,
                         stderr=stderr_target
                     )
-                    
+
                     processes.append((proc, stdout_target, stderr_target, prev_read_fd, write_fd))
-                    
+
                     # Close pipe ends in parent (child has its own copy)
                     if prev_read_fd:
                         os.close(prev_read_fd)
                     if write_fd:
                         os.close(write_fd)
-                    
+
                     prev_read_fd = read_fd
-                
-                # Wait for all processes (in reverse order for proper cleanup)
-                for proc, stdout_target, stderr_target, stdin_fd, stdout_fd in reversed(processes):
-                    proc.wait()
+
+                # Wait for all processes and handle cleanup
+                for proc, stdout_target, stderr_target, stdin_fd, stdout_fd in processes:
+                    try:
+                        proc.wait()  # This will return when process exits or gets SIGPIPE
+                    except Exception:
+                        pass  # Process may have already exited
+
                     if stdout_target:
-                        stdout_target.close()
+                        try:
+                            stdout_target.flush()
+                            stdout_target.close()
+                        except Exception:
+                            pass
                     if stderr_target:
-                        stderr_target.close()
+                        try:
+                            stderr_target.flush()
+                            stderr_target.close()
+                        except Exception:
+                            pass
         except EOFError:
             break
 
