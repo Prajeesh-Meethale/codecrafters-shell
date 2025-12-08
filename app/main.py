@@ -21,13 +21,14 @@ def main():
             
             # Handle redirection
             redirect_file = None
-            # Find redirection operator (1> or >) from right to left, checking if it's outside quotes
+            redirect_stderr = False  # True for 2>, False for 1> or >
+            # Find redirection operator (2>, 1>, or >) from right to left, checking if it's outside quotes
             redirect_pos = -1
             redirect_op = None
             
-            # Check for 1> first (stdout redirection with explicit fd)
+            # Check for 2> first (stderr redirection)
             for i in range(len(line) - 1, -1, -1):
-                if line[i:i+2] == '1>':
+                if line[i:i+2] == '2>':
                     # Check if we're outside quotes
                     before = line[:i]
                     # Count unescaped quotes
@@ -45,10 +46,36 @@ def main():
                         j += 1
                     if not in_single and not in_double:
                         redirect_pos = i
-                        redirect_op = '1>'
+                        redirect_op = '2>'
+                        redirect_stderr = True
                         break
             
-            # If no 1> found, check for >
+            # Check for 1> (stdout redirection with explicit fd)
+            if redirect_pos == -1:
+                for i in range(len(line) - 1, -1, -1):
+                    if line[i:i+2] == '1>':
+                        # Check if we're outside quotes
+                        before = line[:i]
+                        # Count unescaped quotes
+                        in_single = False
+                        in_double = False
+                        j = 0
+                        while j < len(before):
+                            if before[j] == '\\' and j + 1 < len(before):
+                                j += 2
+                                continue
+                            if before[j] == "'" and not in_double:
+                                in_single = not in_single
+                            elif before[j] == '"' and not in_single:
+                                in_double = not in_double
+                            j += 1
+                        if not in_single and not in_double:
+                            redirect_pos = i
+                            redirect_op = '1>'
+                            redirect_stderr = False
+                            break
+            
+            # If no 2> or 1> found, check for >
             if redirect_pos == -1:
                 for i in range(len(line) - 1, -1, -1):
                     if line[i] == '>':
@@ -70,6 +97,7 @@ def main():
                         if not in_single and not in_double:
                             redirect_pos = i
                             redirect_op = '>'
+                            redirect_stderr = False
                             break
             
             if redirect_pos != -1:
@@ -155,7 +183,10 @@ def main():
                         if dir_path:
                             os.makedirs(dir_path, exist_ok=True)
                         with open(redirect_file, 'w') as f:
-                            subprocess.run([command] + args[1:], executable=full_path, stdout=f)
+                            if redirect_stderr:
+                                subprocess.run([command] + args[1:], executable=full_path, stderr=f)
+                            else:
+                                subprocess.run([command] + args[1:], executable=full_path, stdout=f)
                     else:
                         subprocess.run([command] + args[1:], executable=full_path)
                 else:
