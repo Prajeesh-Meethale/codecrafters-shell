@@ -141,10 +141,10 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                     os.makedirs(dir_path, exist_ok=True)
                 mode = 'a' if redirect_append else 'w'
                 if redirect_stderr:
-                    # Open in text mode for stderr redirection
-                    stderr_target = open(redirect_file, mode + 't', buffering=1)  # Line buffering, text mode
+                    # Open in text mode for stderr redirection, unbuffered
+                    stderr_target = open(redirect_file, mode + 't', buffering=0)  # Unbuffered, text mode
                 else:
-                    stdout_target = open(redirect_file, mode + 't', buffering=1)  # Line buffering, text mode
+                    stdout_target = open(redirect_file, mode + 't', buffering=0)  # Unbuffered, text mode
             
             # Determine stdout handling
             if stdout_target:
@@ -367,9 +367,9 @@ def main():
                             os.makedirs(dir_path, exist_ok=True)
                         mode = 'a' if redirect_append else 'w'
                         if redirect_stderr:
-                            stderr_target = open(redirect_file, mode + 't', buffering=1)
+                            stderr_target = open(redirect_file, mode + 't', buffering=0)
                         else:
-                            stdout_target = open(redirect_file, mode + 't', buffering=1)
+                            stdout_target = open(redirect_file, mode + 't', buffering=0)
 
                     # Determine stdout
                     if stdout_target:
