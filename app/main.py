@@ -141,15 +141,18 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                     os.makedirs(dir_path, exist_ok=True)
                 mode = 'a' if redirect_append else 'w'
                 if redirect_stderr:
-                    stderr_target = open(redirect_file, mode, buffering=1)  # Line buffering
+                    # Open in text mode for stderr redirection
+                    stderr_target = open(redirect_file, mode + 't', buffering=1)  # Line buffering, text mode
                 else:
-                    stdout_target = open(redirect_file, mode, buffering=1)  # Line buffering
+                    stdout_target = open(redirect_file, mode + 't', buffering=1)  # Line buffering, text mode
             
             # Determine stdout handling
             if stdout_target:
                 stdout_param = stdout_target
             elif redirect_file and not redirect_stderr:
                 stdout_param = None  # Will be redirected to file
+            elif redirect_stderr:
+                stdout_param = None  # Go to terminal when stderr is redirected
             else:
                 stdout_param = subprocess.PIPE  # Capture for pipeline or display
             
