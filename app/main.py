@@ -46,7 +46,7 @@ def main():
                     try:
                         os.chdir(args[1])
                     except OSError:
-                        pass
+                        print(f"cd: {args[1]}: No such file or directory")
             else:
                 full_path = find_executable(command)
                 if full_path:
