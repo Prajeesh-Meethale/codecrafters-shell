@@ -150,42 +150,22 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             else:
                 stdout_param = subprocess.PIPE  # Capture for pipeline or display
             
-            # Handle stderr redirection by capturing and writing manually
-            if stderr_target:
-                # For stderr redirection, capture stderr and write to file
-                subprocess_args = {
-                    'args': [command] + args[1:],
-                    'executable': full_path,
-                    'stdout': stdout_param,
-                    'stderr': subprocess.PIPE  # Capture stderr
-                }
+            # Build subprocess arguments
+            subprocess_args = {
+                'args': [command] + args[1:],
+                'executable': full_path,
+                'stdout': stdout_param,
+                'stderr': stderr_target
+            }
 
-                if stdin_data is not None:
-                    subprocess_args['input'] = stdin_data
+            # Use input parameter if stdin_data is provided, otherwise don't set stdin
+            if stdin_data is not None:
+                subprocess_args['input'] = stdin_data
+            # Don't set stdin parameter when using input
 
-                result = subprocess.run(**subprocess_args)
+            result = subprocess.run(**subprocess_args)
 
-                # Write captured stderr to file
-                if result.stderr:
-                    stderr_text = result.stderr.decode('utf-8', errors='replace')
-                    stderr_target.write(stderr_text)
-                    stderr_target.flush()
-                    stderr_target.close()
-            else:
-                # Normal execution without stderr redirection
-                subprocess_args = {
-                    'args': [command] + args[1:],
-                    'executable': full_path,
-                    'stdout': stdout_param,
-                    'stderr': None  # Use default (terminal)
-                }
-
-                if stdin_data is not None:
-                    subprocess_args['input'] = stdin_data
-
-                result = subprocess.run(**subprocess_args)
-
-            # Close stdout file if opened
+            # Close files after subprocess completes
             if stdout_target:
                 try:
                     stdout_target.flush()
@@ -193,6 +173,13 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 except:
                     pass
                 stdout_target.close()
+            if stderr_target:
+                try:
+                    stderr_target.flush()
+                    os.fsync(stderr_target.fileno())
+                except:
+                    pass
+                stderr_target.close()
 
             # Return output for pipeline or print if no redirection
             if stdout_param == subprocess.PIPE:
