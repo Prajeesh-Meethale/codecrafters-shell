@@ -28,16 +28,14 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 f.write(output)
             return b""
         elif redirect_file and redirect_stderr:
-            # Create the file for stderr redirection, but output goes to stdout
+            # Write to stderr file, never print to stdout
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
-            if not redirect_append:
-                open(redirect_file, 'w').close()  # Create empty file
-            if should_print:
-                sys.stdout.buffer.write(output_bytes)
-                sys.stdout.buffer.flush()
-            return output_bytes if not should_print else b""
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode, encoding='utf-8') as f:
+                f.write(output)
+            return b""  # No output to terminal or pipeline
         else:
             if should_print:
                 sys.stdout.buffer.write(output_bytes)
@@ -70,16 +68,14 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 f.write(output)
             return b""
         elif redirect_file and redirect_stderr:
-            # Create the file for stderr redirection, but output goes to stdout
+            # Write to stderr file, never print to stdout
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
-            if not redirect_append:
-                open(redirect_file, 'w').close()  # Create empty file
-            if should_print:
-                sys.stdout.buffer.write(output_bytes)
-                sys.stdout.buffer.flush()
-            return output_bytes if not should_print else b""
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode, encoding='utf-8') as f:
+                f.write(output)
+            return b""  # No output to terminal or pipeline
         else:
             if should_print:
                 sys.stdout.buffer.write(output_bytes)
@@ -98,16 +94,14 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 f.write(output)
             return b""
         elif redirect_file and redirect_stderr:
-            # Create the file for stderr redirection, but output goes to stdout
+            # Write to stderr file, never print to stdout
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
-            if not redirect_append:
-                open(redirect_file, 'w').close()  # Create empty file
-            if should_print:
-                sys.stdout.buffer.write(output_bytes)
-                sys.stdout.buffer.flush()
-            return output_bytes if not should_print else b""
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode, encoding='utf-8') as f:
+                f.write(output)
+            return b""  # No output to terminal or pipeline
         else:
             if should_print:
                 sys.stdout.buffer.write(output_bytes)
