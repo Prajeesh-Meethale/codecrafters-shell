@@ -119,7 +119,8 @@ def main():
                 sys.exit(0)
             elif command == "echo":
                 output = " ".join(args[1:])
-                if redirect_file:
+                # Only redirect if it's stdout redirection (not stderr)
+                if redirect_file and not redirect_stderr:
                     dir_path = os.path.dirname(redirect_file)
                     if dir_path:
                         os.makedirs(dir_path, exist_ok=True)
@@ -142,7 +143,8 @@ def main():
                     else:
                         output = f"{target}: not found"
                 
-                if redirect_file:
+                # Only redirect if it's stdout redirection (not stderr)
+                if redirect_file and not redirect_stderr:
                     dir_path = os.path.dirname(redirect_file)
                     if dir_path:
                         os.makedirs(dir_path, exist_ok=True)
@@ -152,7 +154,8 @@ def main():
                     print(output)
             elif command == "pwd":
                 output = os.getcwd()
-                if redirect_file:
+                # Only redirect if it's stdout redirection (not stderr)
+                if redirect_file and not redirect_stderr:
                     dir_path = os.path.dirname(redirect_file)
                     if dir_path:
                         os.makedirs(dir_path, exist_ok=True)
