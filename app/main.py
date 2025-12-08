@@ -34,22 +34,32 @@ def parse_redirection(cmd_line):
             j += 1
         return not in_single and not in_double
     
-    # Check for 2>>
+    # Check for 2>> FIRST (before >>)
     for i in range(len(cmd_line) - 2, -1, -1):
         if cmd_line[i:i+3] == '2>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+3:].strip(), True, True
     
-    # Check for 2>
+    # Check for 2> (before >)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '2>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), True, False
     
-    # Check for >>
+    # Check for 1>> BEFORE >> (THIS WAS THE BUG)
+    for i in range(len(cmd_line) - 2, -1, -1):
+        if cmd_line[i:i+3] == '1>>' and is_outside_quotes(i, cmd_line):
+            return cmd_line[:i].strip(), cmd_line[i+3:].strip(), False, True
+    
+    # Check for 1> (before >)
+    for i in range(len(cmd_line) - 1, -1, -1):
+        if cmd_line[i:i+2] == '1>' and is_outside_quotes(i, cmd_line):
+            return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, False
+    
+    # Check for >> (after 1>> is already checked)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, True
     
-    # Check for >
+    # Check for > (last, after all >> variants checked)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i] == '>' and is_outside_quotes(i, cmd_line):
             if i + 1 < len(cmd_line) and cmd_line[i+1] == '>':
