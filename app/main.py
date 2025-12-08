@@ -169,6 +169,11 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 subprocess_args['input'] = stdin_data
             # Don't set stdin parameter when using input
 
+            # Add text mode when stderr is redirected to text file
+            if redirect_stderr and stderr_target:
+                subprocess_args['text'] = True
+                subprocess_args['encoding'] = 'utf-8'
+
             result = subprocess.run(**subprocess_args)
 
             # Close files after subprocess completes
