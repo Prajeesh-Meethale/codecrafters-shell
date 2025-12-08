@@ -139,12 +139,13 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 dir_path = os.path.dirname(redirect_file)
                 if dir_path:
                     os.makedirs(dir_path, exist_ok=True)
-                mode = 'a' if redirect_append else 'w'
+                mode = 'ab' if redirect_append else 'wb'
                 if redirect_stderr:
-                    # Open in text mode for stderr redirection, unbuffered
-                    stderr_target = open(redirect_file, mode + 't', buffering=0)  # Unbuffered, text mode
+                    # Open in binary mode for stderr redirection, unbuffered
+                    stderr_target = open(redirect_file, mode, buffering=0)  # Unbuffered, binary mode
                 else:
-                    stdout_target = open(redirect_file, mode + 't', buffering=0)  # Unbuffered, text mode
+                    # Open in binary mode for stdout redirection, unbuffered
+                    stdout_target = open(redirect_file, mode, buffering=0)  # Unbuffered, binary mode
             
             # Determine stdout handling
             if stdout_target:
@@ -170,12 +171,19 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             # Don't set stdin parameter when using input
             
             result = subprocess.run(**subprocess_args)
-            
+
+            # Ensure files are flushed and closed
             if stdout_target:
-                stdout_target.flush()
+                try:
+                    stdout_target.flush()
+                except:
+                    pass
                 stdout_target.close()
             if stderr_target:
-                stderr_target.flush()
+                try:
+                    stderr_target.flush()
+                except:
+                    pass
                 stderr_target.close()
             
             # Return output for pipeline or print if no redirection
@@ -365,11 +373,11 @@ def main():
                         dir_path = os.path.dirname(redirect_file)
                         if dir_path:
                             os.makedirs(dir_path, exist_ok=True)
-                        mode = 'a' if redirect_append else 'w'
+                        mode = 'ab' if redirect_append else 'wb'
                         if redirect_stderr:
-                            stderr_target = open(redirect_file, mode + 't', buffering=0)
+                            stderr_target = open(redirect_file, mode, buffering=0)
                         else:
-                            stdout_target = open(redirect_file, mode + 't', buffering=0)
+                            stdout_target = open(redirect_file, mode, buffering=0)
 
                     # Determine stdout
                     if stdout_target:
