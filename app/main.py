@@ -158,6 +158,12 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 'stderr': stderr_target
             }
 
+            # Ensure stderr is redirected to file when requested
+            if redirect_stderr and redirect_file and stderr_target is None:
+                mode = 'a' if redirect_append else 'w'
+                stderr_target = open(redirect_file, mode, encoding='utf-8')
+                subprocess_args['stderr'] = stderr_target
+
             # Use input parameter if stdin_data is provided, otherwise don't set stdin
             if stdin_data is not None:
                 subprocess_args['input'] = stdin_data
