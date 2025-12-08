@@ -43,10 +43,18 @@ def main():
                 print(os.getcwd())
             elif command == "cd":
                 if len(args) > 1:
+                    path = os.path.expanduser(args[1])
                     try:
-                        os.chdir(args[1])
+                        os.chdir(path)
                     except OSError:
                         print(f"cd: {args[1]}: No such file or directory")
+                else:
+                    # cd without arguments goes to home directory
+                    home = os.path.expanduser("~")
+                    try:
+                        os.chdir(home)
+                    except OSError:
+                        pass
             else:
                 full_path = find_executable(command)
                 if full_path:
