@@ -194,8 +194,7 @@ def main() -> None:
                     [executables[command]] + arguments,
                     stdout=stdout_fd if stdout_file else None,
                     stderr=stderr_fd if stderr_file else None,
-                    capture_output=not (stdout_file or stderr_file)
-                )
+                            capture_output=(not stdout_file and not stderr_file)                )
                 
                 if stdout_fd:
                     stdout_fd.close()
