@@ -1,0 +1,8 @@
+$env:DEEPSEEK_API_KEY="sk-cf9ae172f7554d7e953f6cf1a17328b8"
+$env:PATH = "C:\Users\Prajeesh\.local\bin;$env:PATH"
+cd C:\Users\Prajeesh\codecrafters-shell-python
+
+
+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
+
+$env:GROQ_API_KEY="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"
