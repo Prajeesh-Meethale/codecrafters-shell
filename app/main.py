@@ -71,7 +71,7 @@ def parse_redirection(line):
         stderr_mode = 'w'
     
     # Check for 1>> (append stdout)
-    if '1>>' in line:
+    elif '1>>' in line:
         parts = line.split('1>>')
         line = parts[0].strip()
         stdout_file = parts[1].strip()
