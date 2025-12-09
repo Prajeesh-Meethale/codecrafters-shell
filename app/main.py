@@ -1,7 +1,7 @@
 import os
 import subprocess
 import sys
-from pathlib import Path
+import re
 
 def collect_executables():
     executables = {}
@@ -17,63 +17,81 @@ def collect_executables():
                 pass
     return executables
 
-def execute_pipeline(commands, stdin=None, stdout_file=None, stdout_mode='w', stderr_file=None, stderr_mode='w'):
+def execute_pipeline(commands):
+    """Execute a pipeline of commands."""
     processes = []
     
     for i, (cmd, args) in enumerate(commands):
-        stdin_pipe = subprocess.PIPE if i > 0 else (open(stdin, 'r') if stdin else None)
-        stdout_pipe = subprocess.PIPE if i < len(commands) - 1 else None
-        
-        # Handle output redirection for the last command
-        if i == len(commands) - 1:
-            if stdout_file:
-                stdout_pipe = open(stdout_file, stdout_mode)
-            if stderr_file:
-                stderr_pipe = open(stderr_file, stderr_mode)
-            else:
-                stderr_pipe = None
+        # Set up stdin
+        if i > 0:
+            stdin = processes[i-1].stdout
         else:
-            stderr_pipe = None
+            stdin = None
+        
+        # Set up stdout
+        if i < len(commands) - 1:
+            stdout = subprocess.PIPE
+        else:
+            stdout = None
         
         try:
             p = subprocess.Popen(
                 [cmd] + args,
-                stdin=stdin_pipe,
-                stdout=stdout_pipe,
-                stderr=stderr_pipe
+                stdin=stdin,
+                stdout=stdout,
+                stderr=None
             )
             processes.append(p)
-            if i > 0 and processes[i-1].stdout:
-                processes[i-1].stdout.close()
         except Exception as e:
-            print(f"Error executing {cmd}: {e}")
+            print(f"Error executing {cmd}: {e}", file=sys.stderr)
             return
     
-    # Close the input file if we opened it
-    if stdin and processes[0].stdin and hasattr(processes[0].stdin, 'close'):
-        try:
-            processes[0].stdin.close()
-        except:
-            pass
-    
-    # Wait for all processes to complete
-    for i, p in enumerate(processes):
-        try:
-            p.wait()
-            # Close stdout if it's a file
-            if hasattr(p.stdout, 'close'):
-                p.stdout.close()
-        except:
-            pass
+    # Wait for all processes
+    for p in processes:
+        p.wait()
 
-def exec(command: str, arguments: list[str]) -> None:
-    call(
-        f"{} {}".format(
-            command,
-            " ".join(arguments),
-        ),
-        shell=True
-    )
+def parse_redirection(line):
+    """Parse command line and extract redirections."""
+    stdout_file = None
+    stdout_mode = 'w'
+    stderr_file = None
+    stderr_mode = 'w'
+    
+    # Check for 2>> (append stderr) - check first
+    if '2>>' in line:
+        parts = line.split('2>>')
+        line = parts[0].strip()
+        stderr_file = parts[1].strip()
+        stderr_mode = 'a'
+    elif '2>' in line:
+        parts = line.split('2>')
+        line = parts[0].strip()
+        stderr_file = parts[1].strip()
+        stderr_mode = 'w'
+    
+    # Check for 1>> (append stdout)
+    if '1>>' in line:
+        parts = line.split('1>>')
+        line = parts[0].strip()
+        stdout_file = parts[1].strip()
+        stdout_mode = 'a'
+    elif '1>' in line:
+        parts = line.split('1>')
+        line = parts[0].strip()
+        stdout_file = parts[1].strip()
+        stdout_mode = 'w'
+    elif '>>' in line:
+        parts = line.split('>>')
+        line = parts[0].strip()
+        stdout_file = parts[1].strip()
+        stdout_mode = 'a'
+    elif '>' in line:
+        parts = line.split('>')
+        line = parts[0].strip()
+        stdout_file = parts[1].strip()
+        stdout_mode = 'w'
+    
+    return line, stdout_file, stdout_mode, stderr_file, stderr_mode
 
 def main() -> None:
     executables = collect_executables()
@@ -84,18 +102,10 @@ def main() -> None:
         except EOFError:
             break
 
-        if not line:
-            continue
-
-        # Parse the command line
-        parts = line.split()
-        if not parts:
+        if not line.strip():
             continue
         
-        command = parts[0]
-        arguments = parts[1:]
-        
-        # Handle pipelines
+        # Handle pipelines first
         if '|' in line:
             pipe_parts = line.split('|')
             commands = []
@@ -105,7 +115,7 @@ def main() -> None:
                     cmd = tokens[0]
                     args = tokens[1:]
                     
-                    # Check if command is an executable
+                    # Resolve command path
                     if cmd in executables:
                         commands.append((executables[cmd], args))
                     else:
@@ -114,105 +124,102 @@ def main() -> None:
             execute_pipeline(commands)
             continue
         
-        # Handle output redirection
-        stdout_file = None
-        stdout_mode = 'w'
-        stderr_file = None
-        stderr_mode = 'w'
+        # Parse redirection
+        cmd_line, stdout_file, stdout_mode, stderr_file, stderr_mode = parse_redirection(line)
         
-        # Check for output redirection (1>> or >>)
-        if '1>>' in line:
-            parts = line.split('1>>')
-            line = parts[0].strip()
-            stdout_file = parts[1].strip()
-            stdout_mode = 'a'
-            parts = line.split()
-            command = parts[0]
-            arguments = parts[1:]
-        elif '>>' in line:
-            parts = line.split('>>')
-            line = parts[0].strip()
-            stdout_file = parts[1].strip()
-            stdout_mode = 'a'
-            parts = line.split()
-            command = parts[0]
-            arguments = parts[1:]
-        elif '1>' in line:
-            parts = line.split('1>')
-            line = parts[0].strip()
-            stdout_file = parts[1].strip()
-            parts = line.split()
-            command = parts[0]
-            arguments = parts[1:]
-        elif '>' in line and '2>' not in line:
-            parts = line.split('>')
-            line = parts[0].strip()
-            stdout_file = parts[1].strip()
-            parts = line.split()
-            command = parts[0]
-            arguments = parts[1:]
+        # Parse command and arguments
+        parts = cmd_line.split()
+        if not parts:
+            continue
         
-        # Check for stderr redirection
-        if '2>>' in line:
-            parts = line.split('2>>')
-            line = parts[0].strip()
-            stderr_file = parts[1].strip()
-            stderr_mode = 'a'
-            parts = line.split()
-            command = parts[0]
-            arguments = parts[1:]
-        elif '2>' in line:
-            parts = line.split('2>')
-            line = parts[0].strip()
-            stderr_file = parts[1].strip()
-            parts = line.split()
-            command = parts[0]
-            arguments = parts[1:]
+        command = parts[0]
+        arguments = parts[1:]
         
+        # Handle built-in commands
         if command == 'exit':
-            exit(int(arguments[0]) if arguments else 0)
+            exit_code = int(arguments[0]) if arguments else 0
+            sys.exit(exit_code)
         elif command == 'echo':
-            print(' '.join(arguments))
+            output = ' '.join(arguments)
+            if stdout_file:
+                with open(stdout_file, stdout_mode) as f:
+                    f.write(output + '\n')
+            else:
+                print(output)
         elif command == 'type':
             target = arguments[0] if arguments else None
             if target in ('exit', 'echo', 'type', 'pwd', 'cd'):
-                print(f'{target} is a shell builtin')
+                output = f'{target} is a shell builtin'
             elif target in executables:
-                print(f'{target} is {executables.get(target)}')
+                output = f'{target} is {executables.get(target)}'
             else:
-                print(f'{target} not found')
+                output = f'{target} not found'
+            
+            if stdout_file:
+                with open(stdout_file, stdout_mode) as f:
+                    f.write(output + '\n')
+            else:
+                print(output)
         elif command == 'pwd':
-            print(os.getcwd())
+            output = os.getcwd()
+            if stdout_file:
+                with open(stdout_file, stdout_mode) as f:
+                    f.write(output + '\n')
+            else:
+                print(output)
         elif command == 'cd':
             directory = arguments[0] if arguments else os.path.expanduser('~')
             try:
                 os.chdir(os.path.expanduser(directory))
             except OSError:
-                print(f'cd: {directory}: No such file or directory')
-        elif command in executables:
-            try:
-                if stdout_file:
-                    with open(stdout_file, stdout_mode) as f:
-                        subprocess.run(
-                            [executables[command]] + arguments,
-                            stdout=f,
-                            stderr=subprocess.PIPE if not stderr_file else open(stderr_file, stderr_mode),
-                            text=True
-                        )
+                error_msg = f'cd: {directory}: No such file or directory'
+                if stderr_file:
+                    with open(stderr_file, stderr_mode) as f:
+                        f.write(error_msg + '\n')
                 else:
-                    result = subprocess.run(
-                        [executables[command]] + arguments,
-                        capture_output=True,
-                        text=True
-                    )
-                    if result.stdout:
-                        print(result.stdout, end='')
-                    if result.stderr:
-                        print(result.stderr, file=sys.stderr, end='')
+                    print(error_msg, file=sys.stderr)
+        elif command in executables:
+            # Execute external command
+            try:
+                stdout_fd = None
+                stderr_fd = None
+                
+                if stdout_file:
+                    stdout_fd = open(stdout_file, stdout_mode)
+                
+                if stderr_file:
+                    stderr_fd = open(stderr_file, stderr_mode)
+                
+                result = subprocess.run(
+                    [executables[command]] + arguments,
+                    stdout=stdout_fd if stdout_file else None,
+                    stderr=stderr_fd if stderr_file else None,
+                    capture_output=not (stdout_file or stderr_file)
+                )
+                
+                if stdout_fd:
+                    stdout_fd.close()
+                if stderr_fd:
+                    stderr_fd.close()
+                
+                if not stdout_file and result.stdout:
+                    print(result.stdout.decode('utf-8', errors='replace'), end='')
+                if not stderr_file and result.stderr:
+                    print(result.stderr.decode('utf-8', errors='replace'), file=sys.stderr, end='')
             except Exception as e:
-                print(f'Error executing {command}: {e}')
+                error_msg = f'Error executing {command}: {e}'
+                if stderr_file:
+                    with open(stderr_file, stderr_mode) as f:
+                        f.write(error_msg + '\n')
+                else:
+                    print(error_msg, file=sys.stderr)
         else:
-            print(f'{command}: not found')
+            error_msg = f'{command}: not found'
+            if stderr_file:
+                with open(stderr_file, stderr_mode) as f:
+                    f.write(error_msg + '\n')
+            else:
+                print(error_msg, file=sys.stderr)
 
 if __name__ == '__main__':
     main()
