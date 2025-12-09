@@ -82,11 +82,35 @@ def parse_redirection(line):
         stdout_file = parts[1].strip()
         stdout_mode = 'w'
     elif '>>' in line:
-        parts = line.split('>>')
+    # Check for 1>> (append stdout) first
+    if '1>>' in line:
+        parts = line.split('1>>')
         line = parts[0].strip()
         stdout_file = parts[1].strip()
         stdout_mode = 'a'
-    elif '>' in line:
+    # Check for 1> (write stdout) 
+    elif '1>' in line:
+        parts = line.split('1>')
+        line = parts[0].strip()
+        stdout_file = parts[1].strip()
+        stdout_mode = 'w'
+    # Check for 2>> (append stderr)
+    elif '2>>' in line:
+        parts = line.split('2>>')
+        line = parts[0].strip()
+        stderr_file = parts[1].strip()
+        stderr_mode = 'a'
+    # Check for 2> (write stderr)
+    elif '2>' in line:
+        parts = line.split('2>')
+        line = parts[0].strip()
+        stderr_file = parts[1].strip()
+        stderr_mode = 'w'
+    # Check for >> (append stdout default)
+       line = parts[0].strip()
+        stdout_file = parts[1].strip()
+        stdout_mode = 'a'
+    else:
         parts = line.split('>')
         line = parts[0].strip()
         stdout_file = parts[1].strip()
