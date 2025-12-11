@@ -210,27 +210,75 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             return output
 
 
+# Global variables for tab completion
+tab_press_count = 0
+last_matches = []
+
+
 def completer(text, state):
     """Autocomplete function."""
-    builtins = ["exit", "echo", "type", "pwd", "cd"]
-    executables = list(get_all_executables())
-    all_commands = builtins + executables
+    global tab_press_count, last_matches
     
-    options = [cmd for cmd in all_commands if cmd.startswith(text)]
-    options.sort()
+    if state == 0:
+        # First call for this completion
+        builtins = ["exit", "echo", "type", "pwd", "cd"]
+        executables = list(get_all_executables())
+        all_commands = builtins + executables
+        
+        options = [cmd for cmd in all_commands if cmd.startswith(text)]
+        options.sort()
+        last_matches = options
+        
+        if len(options) == 0:
+            # No matches - ring bell
+            sys.stdout.write('\x07')
+            sys.stdout.flush()
+            return None
+        elif len(options) == 1:
+            # Single match - return with space
+            tab_press_count = 0
+            return options[0] + " "
+        else:
+            # Multiple matches - need to handle tab presses
+            tab_press_count += 1
+            if tab_press_count == 1:
+                # First tab - ring bell
+                sys.stdout.write('\x07')
+                sys.stdout.flush()
+                return None
+            # For second tab, let the display hook handle it
+            return None
     
-    if state < len(options):
-        return options[state] + " "
-    else:
-        return None
+    return None
+
+
+def display_matches_hook(substitution, matches, longest_match_length):
+    """
+    Called when TAB is pressed twice with multiple matches.
+    """
+    global tab_press_count
+    
+    # Print newline
+    print()
+    # Print matches separated by two spaces
+    sorted_matches = sorted(matches)
+    print('  '.join(sorted_matches))
+    # Reprint prompt with original input
+    print(f"$ {readline.get_line_buffer()}", end='', flush=True)
+    # Reset tab counter
+    tab_press_count = 0
 
 
 def main():
+    global tab_press_count
+    
     # Setup readline
     readline.set_completer(completer)
     readline.parse_and_bind("tab: complete")
+    readline.set_completion_display_matches_hook(display_matches_hook)
     
     while True:
+        tab_press_count = 0  # Reset for each new line
         sys.stdout.write("$ ")
         sys.stdout.flush()
         try:
@@ -241,7 +289,7 @@ def main():
         if not line.strip():
             continue
         
-        # Parse pipes FIRST (before shlex)
+        # Parse pipes FIRST
         def is_outside_quotes(pos, text):
             before = text[:pos]
             in_single = False
