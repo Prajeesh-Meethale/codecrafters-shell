@@ -78,17 +78,27 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
     elif command == "echo":
         output = " ".join(args[1:]) + '\n'
         
-        # For builtins with 2> or 2>> redirection, create the file/directory even if empty
+        # Handle stdout redirection (>, >>, 1>, 1>>)
+        if redirect_file and not redirect_stderr:
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode) as f:
+                f.write(output)
+            # DO NOT print to stdout when redirected
+            return b""
+        
+        # Handle stderr redirection (2>, 2>>) - creates empty file since echo has no stderr
         if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
-            # Create empty file or truncate/append if it exists
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
                 pass  # Just create/truncate the file
         
-        # Print to stdout
+        # Only print to stdout if NOT redirected
         sys.stdout.write(output)
         sys.stdout.flush()
         return b""
@@ -105,34 +115,56 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 output = f"{full_path}\n"
             else:
                 output = f"{target}: not found\n"
-        # For builtins with 2> or 2>> redirection, create the file/directory even if empty
+        
+        # Handle stdout redirection (>, >>, 1>, 1>>)
+        if redirect_file and not redirect_stderr:
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode) as f:
+                f.write(output)
+            # DO NOT print to stdout when redirected
+            return b""
+        
+        # Handle stderr redirection (2>, 2>>) - creates empty file since type has no stderr
         if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
-            # Create empty file or truncate/append if it exists
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
                 pass  # Just create/truncate the file
         
-        # Print to stdout
+        # Only print to stdout if NOT redirected
         sys.stdout.write(output)
         sys.stdout.flush()
         return b""
     
     elif command == "pwd":
         output = os.getcwd() + '\n'
-        # For builtins with 2> or 2>> redirection, create the file/directory even if empty
+        
+        # Handle stdout redirection (>, >>, 1>, 1>>)
+        if redirect_file and not redirect_stderr:
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode) as f:
+                f.write(output)
+            # DO NOT print to stdout when redirected
+            return b""
+        
+        # Handle stderr redirection (2>, 2>>) - creates empty file since pwd has no stderr
         if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
-            # Create empty file or truncate/append if it exists
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
                 pass  # Just create/truncate the file
         
-        # Print to stdout
+        # Only print to stdout if NOT redirected
         sys.stdout.write(output)
         sys.stdout.flush()
         return b""
@@ -232,7 +264,7 @@ def main():
             else:
                 # With pipes
                 processes = []
-                prev_fd = None
+                prev_read_fd = None
                 
                 for idx, pipe_cmd in enumerate(pipe_parts):
                     is_last = (idx == len(pipe_parts) - 1)
@@ -250,23 +282,31 @@ def main():
                         break
                     
                     if not is_last:
-                        # Not last - create pipe
+                        # Not last - create pipe for this command's output
                         read_fd, write_fd = os.pipe()
+                        
                         proc = subprocess.Popen(
                             [command] + args[1:],
                             executable=full_path,
-                            stdin=prev_fd,
+                            stdin=prev_read_fd,
                             stdout=write_fd,
-                            stderr=None
+                            stderr=subprocess.DEVNULL
                         )
                         processes.append(proc)
-                        if prev_fd:
-                            os.close(prev_fd)
+                        
+                        # Close write end in parent (child has its own copy)
                         os.close(write_fd)
-                        prev_fd = read_fd
+                        
+                        # Close previous read fd now that we've passed it to the child
+                        if prev_read_fd is not None:
+                            os.close(prev_read_fd)
+                        
+                        # Save read end for next command
+                        prev_read_fd = read_fd
                     else:
-                        # Last command
+                        # Last command - reads from prev_read_fd, writes to stdout (or file)
                         if redirect_file:
+                            # Handle redirection for last command
                             if redirect_stderr:
                                 op = '2>>' if redirect_append else '2>'
                             else:
@@ -275,21 +315,24 @@ def main():
                             proc = subprocess.Popen(
                                 cmd_str,
                                 shell=True,
-                                stdin=prev_fd,
+                                stdin=prev_read_fd,
                                 stdout=None,
                                 stderr=None
                             )
                         else:
+                            # No redirection - output goes to terminal
                             proc = subprocess.Popen(
                                 [command] + args[1:],
                                 executable=full_path,
-                                stdin=prev_fd,
+                                stdin=prev_read_fd,
                                 stdout=None,
-                                stderr=None
+                                stderr=subprocess.DEVNULL
                             )
                         processes.append(proc)
-                        if prev_fd:
-                            os.close(prev_fd)
+                        
+                        # Close the read fd after passing to last command
+                        if prev_read_fd is not None:
+                            os.close(prev_read_fd)
                 
                 # Wait for all processes
                 for proc in processes:
