@@ -215,14 +215,14 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             return output
 
 
-# Global variables for tab completion - EXACTLY like their example
+# Global variables for tab completion
 last_tab_text = ""
 last_tab_matches = []
 last_tab_count = 0
 
 
 def get_executable_matches(text):
-    """Find all executables in PATH that match the given prefix - EXACTLY like their example."""
+    """Find all executables in PATH that match the given prefix."""
     matches = []
     
     # First, check builtins
@@ -249,8 +249,32 @@ def get_executable_matches(text):
     return sorted(matches)
 
 
+def get_longest_common_prefix(strings):
+    """Get the longest common prefix of a list of strings."""
+    if not strings:
+        return ""
+    if len(strings) == 1:
+        return strings[0]
+        
+    prefix = strings[0]
+    for string in strings[1:]:
+        # Find the length of common prefix
+        length = 0
+        for i, (c1, c2) in enumerate(zip(prefix, string)):
+            if c1 != c2:
+                break
+            length = i + 1
+        
+        # Update prefix to common part
+        prefix = prefix[:length]
+        if not prefix:
+            break
+            
+    return prefix
+
+
 def complete(text, state):
-    """Custom tab completion function for readline - ADAPTED from their example."""
+    """Custom tab completion function for readline."""
     global last_tab_text, last_tab_matches, last_tab_count
     
     # Split the line to get the current command/args
@@ -278,6 +302,15 @@ def complete(text, state):
             return None
             
         # Multiple matches
+        # Try to complete to longest common prefix
+        lcp = get_longest_common_prefix(last_tab_matches)
+        if lcp and len(lcp) > len(text):
+            # There's a longer common prefix - complete to it
+            if state == 0:
+                return lcp
+            return None
+        
+        # No progress possible with LCP
         if last_tab_count == 0:
             # First tab press - increment counter, ring bell, return the text
             last_tab_count += 1
@@ -305,7 +338,7 @@ def complete(text, state):
 def main():
     global last_tab_count, last_tab_text
     
-    # Setup readline - EXACTLY like their example
+    # Setup readline
     readline.parse_and_bind("tab: complete")
     readline.set_completer(complete)
     readline.set_completer_delims(" \t\n")
