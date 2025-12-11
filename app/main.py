@@ -119,7 +119,7 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
         if len(args) < 2:
             return b""
         target = args[1]
-        if target in ["exit", "echo", "type", "pwd", "cd"]:
+        if target in ["exit", "echo", "type", "pwd", "cd", "history"]:
             output = f"{target} is a shell builtin\n"
         else:
             full_path = find_executable(target)
@@ -185,6 +185,11 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             os.chdir(home)
         return b""
     
+    elif command == "history":
+        # Placeholder for history command
+        # Will be implemented in later stages
+        return b""
+    
     else:
         full_path = find_executable(command)
         if not full_path:
@@ -226,7 +231,7 @@ def get_executable_matches(text):
     matches = []
     
     # First, check builtins
-    builtins = ["exit", "echo", "type", "pwd", "cd"]
+    builtins = ["exit", "echo", "type", "pwd", "cd", "history"]
     for cmd in builtins:
         if cmd.startswith(text):
             matches.append(cmd)
@@ -407,7 +412,7 @@ def main():
                 
                 command_name = args[0]
                 
-                builtins = ["exit", "echo", "type", "pwd", "cd"]
+                builtins = ["exit", "echo", "type", "pwd", "cd", "history"]
                 if command_name in builtins:
                     if not is_last:
                         read_fd, write_fd = os.pipe()
