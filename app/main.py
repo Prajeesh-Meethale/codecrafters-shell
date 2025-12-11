@@ -3,6 +3,7 @@ import os
 import subprocess
 import shlex
 import readline
+import glob
 
 
 def find_executable(command):
@@ -14,19 +15,23 @@ def find_executable(command):
 
 
 def get_all_executables():
-    """Get all executable files from PATH."""
-    executables = set()
-    for path in os.environ.get('PATH', '').split(os.pathsep):
-        if not os.path.isdir(path):
+    """Get all executable files from PATH - using glob like their example."""
+    matches = []
+    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    
+    for dir_path in path_dirs:
+        if not dir_path:
             continue
         try:
-            for entry in os.listdir(path):
-                full_path = os.path.join(path, entry)
-                if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
-                    executables.add(entry)
-        except (PermissionError, OSError):
-            continue
-    return executables
+            for file_path in glob.glob(os.path.join(dir_path, "*")):
+                if os.path.isfile(file_path) and os.access(file_path, os.X_OK):
+                    cmd_name = os.path.basename(file_path)
+                    if cmd_name not in matches:
+                        matches.append(cmd_name)
+        except Exception:
+            pass
+    
+    return matches
 
 
 def parse_redirection(cmd_line):
@@ -210,77 +215,105 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             return output
 
 
-# Global variables for tab completion
+# Global variables for tab completion - EXACTLY like their example
 last_tab_text = ""
 last_tab_matches = []
 last_tab_count = 0
 
 
-def completer(text, state):
-    """Autocomplete function."""
+def get_executable_matches(text):
+    """Find all executables in PATH that match the given prefix - EXACTLY like their example."""
+    matches = []
+    
+    # First, check builtins
+    builtins = ["exit", "echo", "type", "pwd", "cd"]
+    for cmd in builtins:
+        if cmd.startswith(text):
+            matches.append(cmd)
+    
+    # Then check executables in PATH
+    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    for dir_path in path_dirs:
+        if not dir_path:
+            continue
+        
+        try:
+            for file_path in glob.glob(os.path.join(dir_path, "*")):
+                if os.path.isfile(file_path) and os.access(file_path, os.X_OK):
+                    cmd_name = os.path.basename(file_path)
+                    if cmd_name.startswith(text) and cmd_name not in matches:
+                        matches.append(cmd_name)
+        except Exception:
+            pass
+    
+    return sorted(matches)
+
+
+def complete(text, state):
+    """Custom tab completion function for readline - ADAPTED from their example."""
     global last_tab_text, last_tab_matches, last_tab_count
     
-    # Check if we're completing the first word
+    # Split the line to get the current command/args
     line = readline.get_line_buffer()
-    if " " not in line.lstrip():
-        # New completion attempt
-        if state == 0:
-            if text != last_tab_text:
-                last_tab_text = text
-                last_tab_matches = []
-                last_tab_count = 0
-                
-                # Get matches
-                builtins = ["exit", "echo", "type", "pwd", "cd"]
-                executables = list(get_all_executables())
-                all_commands = builtins + executables
-                
-                last_tab_matches = sorted([cmd for cmd in all_commands if cmd.startswith(text)])
-            
-            # No matches - ring bell
-            if not last_tab_matches:
-                sys.stdout.write('\a')
+    
+    # First word (command) completion
+    if not line.strip() or " " not in line.lstrip():
+        # New completion attempt or different text
+        if text != last_tab_text:
+            last_tab_text = text
+            last_tab_matches = get_executable_matches(text)
+            last_tab_count = 0
+        
+        # No matches
+        if not last_tab_matches:
+            if state == 0:
+                sys.stdout.write('\a')  # Ring bell
                 sys.stdout.flush()
-                return None
+            return None
             
-            # Single match - return with space
-            if len(last_tab_matches) == 1:
+        # Single match - add space
+        if len(last_tab_matches) == 1:
+            if state == 0:
                 return last_tab_matches[0] + " "
+            return None
             
-            # Multiple matches
-            if last_tab_count == 0:
-                # First tab - ring bell, return text
-                last_tab_count += 1
-                sys.stdout.write('\a')
+        # Multiple matches
+        if last_tab_count == 0:
+            # First tab press - increment counter, ring bell, return the text
+            last_tab_count += 1
+            if state == 0:
+                sys.stdout.write('\a')  # Ring bell
                 sys.stdout.flush()
                 return text
-            else:
-                # Second tab - display and return text
-                print()
+            return None
+        else:
+            # Second tab press - display all matches
+            if state == 0:
+                print()  # New line
                 print("  ".join(last_tab_matches))
                 sys.stdout.write(f"$ {text}")
                 sys.stdout.flush()
                 return text
-        
-        return None
+            return None
     
-    # For arguments (space in line), no completion
+    # Multiple word completion (not implemented yet)
     if state == 0:
         return text
     return None
 
 
 def main():
-    global last_tab_count
+    global last_tab_count, last_tab_text
     
-    # Setup readline
-    readline.set_completer(completer)
+    # Setup readline - EXACTLY like their example
     readline.parse_and_bind("tab: complete")
+    readline.set_completer(complete)
     readline.set_completer_delims(" \t\n")
     
     while True:
-        # Reset completion state for each new input line
+        # Reset for new line
         last_tab_count = 0
+        last_tab_text = ""
         
         sys.stdout.write("$ ")
         sys.stdout.flush()
