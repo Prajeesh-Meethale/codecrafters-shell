@@ -3,7 +3,6 @@ import os
 import subprocess
 import shlex
 import readline
-import glob
 
 
 def find_executable(command):
@@ -52,32 +51,26 @@ def parse_redirection(cmd_line):
             j += 1
         return not in_single and not in_double
     
-    # Check for 2>> FIRST (before >>)
     for i in range(len(cmd_line) - 2, -1, -1):
         if cmd_line[i:i+3] == '2>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+3:].strip(), True, True
     
-    # Check for 2> (before >)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '2>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), True, False
     
-    # Check for 1>> BEFORE >> (THIS WAS THE BUG)
     for i in range(len(cmd_line) - 2, -1, -1):
         if cmd_line[i:i+3] == '1>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+3:].strip(), False, True
     
-    # Check for 1> (before >)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '1>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, False
     
-    # Check for >> (after 1>> is already checked)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, True
     
-    # Check for > (last, after all >> variants checked)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i] == '>' and is_outside_quotes(i, cmd_line):
             if i + 1 < len(cmd_line) and cmd_line[i+1] == '>':
@@ -96,7 +89,6 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
     elif command == "echo":
         output = " ".join(args[1:]) + '\n'
         
-        # Handle stdout redirection (>, >>, 1>, 1>>)
         if redirect_file and not redirect_stderr:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
@@ -104,19 +96,16 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
                 f.write(output)
-            # DO NOT print to stdout when redirected
             return b""
         
-        # Handle stderr redirection (2>, 2>>) - creates empty file since echo has no stderr
         if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
-                pass  # Just create/truncate the file
+                pass
         
-        # Only print to stdout if NOT redirected
         sys.stdout.write(output)
         sys.stdout.flush()
         return b""
@@ -134,7 +123,6 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             else:
                 output = f"{target}: not found\n"
         
-        # Handle stdout redirection (>, >>, 1>, 1>>)
         if redirect_file and not redirect_stderr:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
@@ -142,19 +130,16 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
                 f.write(output)
-            # DO NOT print to stdout when redirected
             return b""
         
-        # Handle stderr redirection (2>, 2>>) - creates empty file since type has no stderr
         if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
-                pass  # Just create/truncate the file
+                pass
         
-        # Only print to stdout if NOT redirected
         sys.stdout.write(output)
         sys.stdout.flush()
         return b""
@@ -162,7 +147,6 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
     elif command == "pwd":
         output = os.getcwd() + '\n'
         
-        # Handle stdout redirection (>, >>, 1>, 1>>)
         if redirect_file and not redirect_stderr:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
@@ -170,19 +154,16 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
                 f.write(output)
-            # DO NOT print to stdout when redirected
             return b""
         
-        # Handle stderr redirection (2>, 2>>) - creates empty file since pwd has no stderr
         if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
-                pass  # Just create/truncate the file
+                pass
         
-        # Only print to stdout if NOT redirected
         sys.stdout.write(output)
         sys.stdout.flush()
         return b""
@@ -200,27 +181,22 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
         return b""
     
     else:
-        # EXTERNAL COMMAND - use shell=True for redirection
         full_path = find_executable(command)
         if not full_path:
             print(f"{command}: command not found")
             return b""
         
-        # Build command line
         cmd_str = ' '.join([command] + args[1:])
         
         if redirect_file:
-            # Add redirection operator
             if redirect_stderr:
                 op = '2>>' if redirect_append else '2>'
             else:
                 op = '>>' if redirect_append else '>'
             cmd_str = f"{cmd_str} {op} {redirect_file}"
-            # Use shell to handle redirection
             subprocess.call(cmd_str, shell=True)
             return b""
         else:
-            # No redirection
             result = subprocess.run(
                 [command] + args[1:],
                 executable=full_path,
@@ -234,107 +210,56 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             return output
 
 
-# Global variables
-tab_press_count = 0
+# Globals
+tab_count = 0
 last_matches = []
-pending_space = False
 
 
-def completer(text, state):
-    """Readline completer function."""
-    global tab_press_count, last_matches, pending_space
+class Completer:
+    def __init__(self):
+        self.matches = []
     
-    if state == 0:
-        # Get what to complete
-        builtins = ["exit", "echo", "type", "pwd", "cd"]
-        executables = get_all_executables()
-        all_commands = builtins + list(executables)
-        
-        # Find matches
-        if text:
-            matches = [cmd for cmd in all_commands if cmd.startswith(text)]
-        else:
-            matches = all_commands
-        
-        matches.sort()
-        last_matches = matches
-        
-        if len(matches) == 0:
-            # No matches
-            sys.stdout.write('\x07')
-            sys.stdout.flush()
-            pending_space = False
-            return None
-        elif len(matches) == 1:
-            # Single match - mark that we need to add space after
-            pending_space = True
-            tab_press_count = 0
-            return matches[0]
-        else:
-            # Multiple matches - try LCP
-            lcp = os.path.commonprefix(matches)
-            if lcp and len(lcp) > len(text):
-                pending_space = False
-                tab_press_count = 0
-                return lcp
+    def complete(self, text, state):
+        """Tab completion function."""
+        if state == 0:
+            # First call - generate matches
+            builtins = ["exit", "echo", "type", "pwd", "cd"]
+            executables = get_all_executables()
+            all_commands = builtins + list(executables)
+            
+            if text:
+                self.matches = [cmd for cmd in all_commands if cmd.startswith(text)]
             else:
-                # No completion possible
-                pending_space = False
-                tab_press_count += 1
-                if tab_press_count == 1:
-                    sys.stdout.write('\x07')
-                    sys.stdout.flush()
-                return None
-    
-    return None
-
-
-def display_matches_hook(substitution, matches, longest_match_length):
-    """Display hook for multiple matches."""
-    global tab_press_count
-    
-    print()
-    sorted_matches = sorted(matches)
-    print('  '.join(sorted_matches))
-    print(f"$ {readline.get_line_buffer()}", end='', flush=True)
-    tab_press_count = 0
-
-
-def post_complete_hook():
-    """Called after completion - add trailing space if needed."""
-    global pending_space
-    
-    if pending_space:
-        readline.insert_text(' ')
-        readline.redisplay()
-        pending_space = False
-
-
-def setup_readline():
-    """Configure readline."""
-    readline.set_completer(completer)
-    readline.set_completer_delims(' \t\n')
-    readline.parse_and_bind('tab: complete')
-    readline.set_completion_display_matches_hook(display_matches_hook)
-    
-    # Set post-completion hook to add space
-    readline.set_pre_input_hook(post_complete_hook)
+                self.matches = all_commands[:]
+            
+            self.matches.sort()
+        
+        try:
+            # Return match for this state, with space appended for single matches
+            match = self.matches[state]
+            # Check if this is the only match
+            if len(self.matches) == 1:
+                return match + ' '
+            else:
+                return match
+        except IndexError:
+            return None
 
 
 def main():
-    global tab_press_count
-    
-    setup_readline()
+    # Setup readline
+    completer = Completer()
+    readline.set_completer(completer.complete)
+    readline.parse_and_bind('tab: complete')
+    readline.set_completer_delims('\t\n')  # Remove space from delimiters!
     
     while True:
         try:
-            tab_press_count = 0
             line = input("$ ")
             
             if not line.strip():
                 continue
             
-            # Check for pipes
             def is_outside_quotes(pos, text):
                 before = text[:pos]
                 in_single = False
@@ -351,7 +276,6 @@ def main():
                     j += 1
                 return not in_single and not in_double
             
-            # Split by pipes
             pipe_parts = []
             current = ""
             for i, char in enumerate(line):
@@ -362,14 +286,12 @@ def main():
                     current += char
             pipe_parts.append(current.strip())
             
-            # Execute
             if len(pipe_parts) == 1:
                 cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(pipe_parts[0])
                 args = shlex.split(cmd_part)
                 if args:
                     execute_command(args[0], args, redirect_file, redirect_stderr, redirect_append)
             else:
-                # With pipes
                 processes = []
                 prev_read_fd = None
                 
