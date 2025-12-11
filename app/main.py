@@ -2,6 +2,8 @@
 import os
 import subprocess
 import shlex
+import readline
+import glob
 
 
 def find_executable(command):
@@ -10,6 +12,22 @@ def find_executable(command):
         if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
             return full_path
     return None
+
+
+def get_all_executables():
+    """Get all executable files from PATH."""
+    executables = set()
+    for path in os.environ.get('PATH', '').split(os.pathsep):
+        if not os.path.isdir(path):
+            continue
+        try:
+            for entry in os.listdir(path):
+                full_path = os.path.join(path, entry)
+                if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
+                    executables.add(entry)
+        except (PermissionError, OSError):
+            continue
+    return executables
 
 
 def parse_redirection(cmd_line):
@@ -216,12 +234,118 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             return output
 
 
+# Global variable to track consecutive tab presses
+tab_press_count = 0
+last_completion_text = ""
+last_matches = []
+
+
+def completer(text, state):
+    """
+    Readline completer function.
+    Called with state=0,1,2... until it returns None.
+    """
+    global tab_press_count, last_completion_text, last_matches
+    
+    if state == 0:
+        # First call for this completion
+        # Get the current line
+        line_buffer = readline.get_line_buffer()
+        begin_idx = readline.get_begidx()
+        
+        # Get the word being completed (everything from start or after last space)
+        words = line_buffer[:begin_idx].split()
+        
+        # Determine what to complete
+        builtins = ["exit", "echo", "type", "pwd", "cd"]
+        executables = get_all_executables()
+        all_commands = builtins + list(executables)
+        
+        # Find matches
+        if text:
+            matches = [cmd for cmd in all_commands if cmd.startswith(text)]
+        else:
+            matches = all_commands
+        
+        matches.sort()
+        last_matches = matches
+        last_completion_text = text
+        
+        if len(matches) == 0:
+            # No matches - ring bell
+            sys.stdout.write('\x07')
+            sys.stdout.flush()
+            return None
+        elif len(matches) == 1:
+            # Single match - complete with trailing space
+            tab_press_count = 0
+            return matches[0] + ' '
+        else:
+            # Multiple matches - find longest common prefix
+            lcp = os.path.commonprefix(matches)
+            if lcp and len(lcp) > len(text):
+                # There's a longer common prefix
+                tab_press_count = 0
+                return lcp
+            else:
+                # No progress possible, store matches for potential display
+                readline.insert_text('')
+                return None
+    
+    return None
+
+
+def display_matches_hook(substitution, matches, longest_match_length):
+    """
+    Custom display hook for showing multiple matches.
+    Called when TAB is pressed twice with multiple matches.
+    """
+    global tab_press_count
+    
+    # Ring bell on first tab
+    if tab_press_count == 0:
+        sys.stdout.write('\x07')
+        sys.stdout.flush()
+        tab_press_count = 1
+        return
+    
+    # Display matches on second tab
+    if tab_press_count == 1:
+        print()  # New line
+        sorted_matches = sorted(matches)
+        print('  '.join(sorted_matches))
+        print(f"$ {readline.get_line_buffer()}", end='', flush=True)
+        tab_press_count = 0
+
+
+def setup_readline():
+    """Configure readline for autocompletion."""
+    # Set completer
+    readline.set_completer(completer)
+    
+    # Set completer delimiters (space, tab, etc.)
+    readline.set_completer_delims(' \t\n')
+    
+    # Enable tab completion
+    readline.parse_and_bind('tab: complete')
+    
+    # Set custom display hook
+    readline.set_completion_display_matches_hook(display_matches_hook)
+
+
 def main():
+    global tab_press_count
+    
+    # Setup readline for autocompletion
+    setup_readline()
+    
     while True:
         try:
-            sys.stdout.write("$ ")
-            sys.stdout.flush()
-            line = input()
+            # Reset tab counter for each new line
+            tab_press_count = 0
+            
+            # Use readline for input
+            line = input("$ ")
             
             if not line.strip():
                 continue
@@ -389,6 +513,7 @@ def main():
         except EOFError:
             break
         except KeyboardInterrupt:
+            print()
             continue
 
 
