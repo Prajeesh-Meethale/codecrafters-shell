@@ -1,390 +1,207 @@
 ﻿import sys
-import os
+import shutil
 import subprocess
+import os
 import shlex
 import readline
 
-
-def find_executable(command):
-    for path in os.environ.get('PATH', '').split(os.pathsep):
-        full_path = os.path.join(path, command)
-        if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
-            return full_path
-    return None
+# ------------------------------
+# Builtins
+# ------------------------------
 
 
-def get_all_executables():
-    """Get all executable files from PATH."""
-    executables = set()
-    for path in os.environ.get('PATH', '').split(os.pathsep):
-        if not os.path.isdir(path):
-            continue
-        try:
-            for entry in os.listdir(path):
-                full_path = os.path.join(path, entry)
-                if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
-                    executables.add(entry)
-        except (PermissionError, OSError):
-            continue
-    return executables
+def builtin_exit(args):
+    sys.exit(0)
 
 
-def parse_redirection(cmd_line):
-    """Parse redirection from command line."""
-    redirect_file = None
-    redirect_stderr = False
-    redirect_append = False
-    
-    def is_outside_quotes(pos, text):
-        before = text[:pos]
-        in_single = False
-        in_double = False
-        j = 0
-        while j < len(before):
-            if before[j] == '\\' and j + 1 < len(before):
-                j += 2
-                continue
-            if before[j] == "'" and not in_double:
-                in_single = not in_single
-            elif before[j] == '"' and not in_single:
-                in_double = not in_double
-            j += 1
-        return not in_single and not in_double
-    
-    for i in range(len(cmd_line) - 2, -1, -1):
-        if cmd_line[i:i+3] == '2>>' and is_outside_quotes(i, cmd_line):
-            return cmd_line[:i].strip(), cmd_line[i+3:].strip(), True, True
-    
-    for i in range(len(cmd_line) - 1, -1, -1):
-        if cmd_line[i:i+2] == '2>' and is_outside_quotes(i, cmd_line):
-            return cmd_line[:i].strip(), cmd_line[i+2:].strip(), True, False
-    
-    for i in range(len(cmd_line) - 2, -1, -1):
-        if cmd_line[i:i+3] == '1>>' and is_outside_quotes(i, cmd_line):
-            return cmd_line[:i].strip(), cmd_line[i+3:].strip(), False, True
-    
-    for i in range(len(cmd_line) - 1, -1, -1):
-        if cmd_line[i:i+2] == '1>' and is_outside_quotes(i, cmd_line):
-            return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, False
-    
-    for i in range(len(cmd_line) - 1, -1, -1):
-        if cmd_line[i:i+2] == '>>' and is_outside_quotes(i, cmd_line):
-            return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, True
-    
-    for i in range(len(cmd_line) - 1, -1, -1):
-        if cmd_line[i] == '>' and is_outside_quotes(i, cmd_line):
-            if i + 1 < len(cmd_line) and cmd_line[i+1] == '>':
-                continue
-            return cmd_line[:i].strip(), cmd_line[i+1:].strip(), False, False
-    
-    return cmd_line, None, False, False
+def builtin_cd(args):
+    path = os.path.expanduser(args[0]) if args else os.path.expanduser("~")
+    try:
+        os.chdir(path)
+    except FileNotFoundError:
+        print(f"cd: {args[0]}: No such file or directory")
+    except NotADirectoryError:
+        print(f"cd: {args[0]}: Not a directory")
+    except PermissionError:
+        print(f"cd: {args[0]}: Permission denied")
 
 
-def execute_command(command, args, redirect_file=None, redirect_stderr=False, redirect_append=False, stdin_data=None, should_print=True):
-    """Execute a single command."""
-    
-    if command == "exit":
-        sys.exit(0 if not args or len(args) < 2 else int(args[1]))
-    
-    elif command == "echo":
-        output = " ".join(args[1:]) + '\n'
-        
-        if redirect_file and not redirect_stderr:
-            dir_path = os.path.dirname(redirect_file)
-            if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
-            mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode) as f:
-                f.write(output)
-            return b""
-        
-        if redirect_stderr and redirect_file:
-            dir_path = os.path.dirname(redirect_file)
-            if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
-            mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode) as f:
-                pass
-        
-        sys.stdout.write(output)
-        sys.stdout.flush()
-        return b""
-    
-    elif command == "type":
-        if len(args) < 2:
-            return b""
-        target = args[1]
-        if target in ["exit", "echo", "type", "pwd", "cd"]:
-            output = f"{target} is a shell builtin\n"
-        else:
-            full_path = find_executable(target)
-            if full_path:
-                output = f"{full_path}\n"
-            else:
-                output = f"{target}: not found\n"
-        
-        if redirect_file and not redirect_stderr:
-            dir_path = os.path.dirname(redirect_file)
-            if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
-            mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode) as f:
-                f.write(output)
-            return b""
-        
-        if redirect_stderr and redirect_file:
-            dir_path = os.path.dirname(redirect_file)
-            if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
-            mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode) as f:
-                pass
-        
-        sys.stdout.write(output)
-        sys.stdout.flush()
-        return b""
-    
-    elif command == "pwd":
-        output = os.getcwd() + '\n'
-        
-        if redirect_file and not redirect_stderr:
-            dir_path = os.path.dirname(redirect_file)
-            if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
-            mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode) as f:
-                f.write(output)
-            return b""
-        
-        if redirect_stderr and redirect_file:
-            dir_path = os.path.dirname(redirect_file)
-            if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
-            mode = 'a' if redirect_append else 'w'
-            with open(redirect_file, mode) as f:
-                pass
-        
-        sys.stdout.write(output)
-        sys.stdout.flush()
-        return b""
-    
-    elif command == "cd":
-        if len(args) > 1:
-            path = os.path.expanduser(args[1])
-            try:
-                os.chdir(path)
-            except OSError:
-                print(f"cd: {args[1]}: No such file or directory")
-        else:
-            home = os.path.expanduser("~")
-            os.chdir(home)
-        return b""
-    
+def builtin_pwd(args):
+    print(os.getcwd())
+
+
+def builtin_echo(args):
+    print(" ".join(args))
+
+
+def builtin_type(args):
+    if not args:
+        print("")
+        return
+
+    target = args[0]
+    if target in BUILTINs:
+        print(f"{target} is a shell builtin")
+        return
+
+    path = shutil.which(target)
+    if path:
+        print(f"{target} is {path}")
+        return
+
+    print(f"{target}: not found")
+
+
+BUILTINs = {
+    "exit": builtin_exit,
+    "echo": builtin_echo,
+    "type": builtin_type,
+    "pwd": builtin_pwd,
+    "cd": builtin_cd,
+}
+
+# ------------------------------
+# Redirection parser
+# ------------------------------
+
+COMMAND = ["echo", "exit"]
+
+
+def completer(text, state):
+
+    options = [cmd for cmd in COMMAND if cmd.startswith(text)]
+    if state < len(options):
+        return options[state] + " "
     else:
-        full_path = find_executable(command)
-        if not full_path:
-            print(f"{command}: command not found")
-            return b""
-        
-        cmd_str = ' '.join([command] + args[1:])
-        
-        if redirect_file:
-            if redirect_stderr:
-                op = '2>>' if redirect_append else '2>'
-            else:
-                op = '>>' if redirect_append else '>'
-            cmd_str = f"{cmd_str} {op} {redirect_file}"
-            subprocess.call(cmd_str, shell=True)
-            return b""
-        else:
-            result = subprocess.run(
-                [command] + args[1:],
-                executable=full_path,
-                stdout=subprocess.PIPE,
-                stderr=None
-            )
-            output = result.stdout if result.stdout else b""
-            if output and should_print:
-                sys.stdout.buffer.write(output)
-                sys.stdout.buffer.flush()
-            return output
+        return None
 
 
-# Globals
-tab_count = 0
-last_matches = []
+def parse_redirection(parts):
+    """
+    Detects:
+        cmd args > file, 1> file, >> file, 1>> file, 2> file
+    Returns:
+        clean_parts, stdout_file, stderr_file, stdout_append
+    """
+    stdout_file = None
+    stderr_file = None
+    stdout_append = False
+    stderr_append = False
+    clean_parts = []
+
+    i = 0
+    while i < len(parts):
+        tok = parts[i]
+
+        # stdout overwrite
+        if tok in [">", "1>"] and i + 1 < len(parts):
+            stdout_file = parts[i + 1]
+            stdout_append = False
+            i += 2
+            continue
+
+        # stdout append
+        if tok in [">>", "1>>"] and i + 1 < len(parts):
+            stdout_file = parts[i + 1]
+            stdout_append = True
+            i += 2
+            continue
+
+        # stderr overwrite
+        if tok == "2>" and i + 1 < len(parts):
+            stderr_file = parts[i + 1]
+            stderr_append = False
+            i += 2
+            continue
+
+        if tok == "2>>" and i + 1 < len(parts):
+            stderr_file = parts[i + 1]
+            stderr_append = True
+            i += 2
+            continue
+
+        # normal token
+        clean_parts.append(tok)
+        i += 1
+
+    return clean_parts, stdout_file, stderr_file, stdout_append, stderr_append
 
 
-class Completer:
-    def __init__(self):
-        self.matches = []
-    
-    def complete(self, text, state):
-        """Tab completion function."""
-        if state == 0:
-            # First call - generate matches
-            builtins = ["exit", "echo", "type", "pwd", "cd"]
-            executables = get_all_executables()
-            all_commands = builtins + list(executables)
-            
-            if text:
-                self.matches = [cmd for cmd in all_commands if cmd.startswith(text)]
-            else:
-                self.matches = all_commands[:]
-            
-            self.matches.sort()
-        
-        try:
-            # Return match for this state, with space appended for single matches
-            match = self.matches[state]
-            # Check if this is the only match
-            if len(self.matches) == 1:
-                return match + ' '
-            else:
-                return match
-        except IndexError:
-            return None
+# ------------------------------
+# Main shell loop
+# ------------------------------
 
 
 def main():
-    # Setup readline
-    completer = Completer()
-    readline.set_completer(completer.complete)
-    readline.parse_and_bind('tab: complete')
-    readline.set_completer_delims('\t\n')  # Remove space from delimiters!
-    
+
+    readline.set_completer(completer)
+    readline.parse_and_bind("tab: complete")
     while True:
+        sys.stdout.write("$ ")
+        sys.stdout.flush()
         try:
-            line = input("$ ")
-            
-            if not line.strip():
-                continue
-            
-            def is_outside_quotes(pos, text):
-                before = text[:pos]
-                in_single = False
-                in_double = False
-                j = 0
-                while j < len(before):
-                    if before[j] == '\\' and j + 1 < len(before):
-                        j += 2
-                        continue
-                    if before[j] == "'" and not in_double:
-                        in_single = not in_single
-                    elif before[j] == '"' and not in_single:
-                        in_double = not in_double
-                    j += 1
-                return not in_single and not in_double
-            
-            pipe_parts = []
-            current = ""
-            for i, char in enumerate(line):
-                if char == '|' and is_outside_quotes(i, line):
-                    pipe_parts.append(current.strip())
-                    current = ""
-                else:
-                    current += char
-            pipe_parts.append(current.strip())
-            
-            if len(pipe_parts) == 1:
-                cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(pipe_parts[0])
-                args = shlex.split(cmd_part)
-                if args:
-                    execute_command(args[0], args, redirect_file, redirect_stderr, redirect_append)
-            else:
-                processes = []
-                prev_read_fd = None
-                
-                for idx, pipe_cmd in enumerate(pipe_parts):
-                    is_last = (idx == len(pipe_parts) - 1)
-                    cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(pipe_cmd)
-                    args = shlex.split(cmd_part)
-                    
-                    if not args:
-                        continue
-                    
-                    command = args[0]
-                    
-                    builtins = ["exit", "echo", "type", "pwd", "cd"]
-                    if command in builtins:
-                        if not is_last:
-                            read_fd, write_fd = os.pipe()
-                            pid = os.fork()
-                            if pid == 0:
-                                if prev_read_fd is not None:
-                                    os.dup2(prev_read_fd, 0)
-                                    os.close(prev_read_fd)
-                                os.dup2(write_fd, 1)
-                                os.close(write_fd)
-                                os.close(read_fd)
-                                execute_command(command, args, redirect_file, redirect_stderr, redirect_append)
-                                sys.exit(0)
-                            else:
-                                processes.append(pid)
-                                os.close(write_fd)
-                                if prev_read_fd is not None:
-                                    os.close(prev_read_fd)
-                                prev_read_fd = read_fd
-                        else:
-                            if prev_read_fd is not None:
-                                try:
-                                    os.read(prev_read_fd, 1000000)
-                                except:
-                                    pass
-                                os.close(prev_read_fd)
-                            execute_command(command, args, redirect_file, redirect_stderr, redirect_append)
-                        continue
-                    
-                    full_path = find_executable(command)
-                    if not full_path:
-                        print(f"{command}: command not found")
-                        break
-                    
-                    if not is_last:
-                        read_fd, write_fd = os.pipe()
-                        proc = subprocess.Popen(
-                            [command] + args[1:],
-                            executable=full_path,
-                            stdin=prev_read_fd,
-                            stdout=write_fd,
-                            stderr=subprocess.DEVNULL
-                        )
-                        processes.append(proc)
-                        os.close(write_fd)
-                        if prev_read_fd is not None:
-                            os.close(prev_read_fd)
-                        prev_read_fd = read_fd
-                    else:
-                        if redirect_file:
-                            if redirect_stderr:
-                                op = '2>>' if redirect_append else '2>'
-                            else:
-                                op = '>>' if redirect_append else '>'
-                            cmd_str = f"{command} {' '.join(args[1:])} {op} {redirect_file}"
-                            proc = subprocess.Popen(cmd_str, shell=True, stdin=prev_read_fd, stdout=None, stderr=None)
-                        else:
-                            proc = subprocess.Popen(
-                                [command] + args[1:],
-                                executable=full_path,
-                                stdin=prev_read_fd,
-                                stdout=None,
-                                stderr=subprocess.DEVNULL
-                            )
-                        processes.append(proc)
-                        if prev_read_fd is not None:
-                            os.close(prev_read_fd)
-                
-                for proc in processes:
-                    if isinstance(proc, int):
-                        os.waitpid(proc, 0)
-                    else:
-                        proc.wait()
-        
+            command = input().strip()
         except EOFError:
-            break
-        except KeyboardInterrupt:
             print()
+            break
+
+        if not command:
             continue
+
+        parts = shlex.split(command)
+        parts, stdout_file, stderr_file, stdout_append, stderr_append = (
+            parse_redirection(parts)
+        )
+
+        if not parts:
+            continue
+
+        cmd = parts[0]
+        args = parts[1:]
+
+        # Builtins
+        if cmd in BUILTINs:
+            save_stdout = sys.stdout
+            save_stderr = sys.stderr
+            try:
+                if stdout_file:
+                    sys.stdout = open(stdout_file, "a" if stdout_append else "w")
+                if stderr_file:
+                    sys.stderr = open(stderr_file, "a" if stderr_append else "w")
+                BUILTINs[cmd](args)
+            finally:
+                if stdout_file:
+                    sys.stdout.close()
+                if stderr_file:
+                    sys.stderr.close()
+                sys.stdout = save_stdout
+                sys.stderr = save_stderr
+            continue
+
+        # External commands
+        path = shutil.which(cmd)
+        if path:
+            stdout_target = (
+                open(stdout_file, "a" if stdout_append else "w")
+                if stdout_file
+                else None
+            )
+            stderr_target = (
+                open(stderr_file, "a" if stderr_append else "w")
+                if stderr_file
+                else None
+            )
+
+            subprocess.run([cmd] + args, stdout=stdout_target, stderr=stderr_target)
+
+            if stdout_target:
+                stdout_target.close()
+            if stderr_target:
+                stderr_target.close()
+            continue
+
+        # Unknown command
+        print(f"{command}: command not found", file=sys.stderr)
 
 
 if __name__ == "__main__":
