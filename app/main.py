@@ -251,7 +251,6 @@ def completer(text, state):
         # First call for this completion
         # Get the current line
         line_buffer = readline.get_line_buffer()
-        begin_idx = readline.get_begidx()
         
         # Determine what to complete
         builtins = ["exit", "echo", "type", "pwd", "cd"]
@@ -274,18 +273,25 @@ def completer(text, state):
             sys.stdout.flush()
             return None
         elif len(matches) == 1:
-            # Single match - return it (readline adds the space via append character)
+            # Single match - complete with trailing space
             tab_press_count = 0
-            return matches[0]
+            # Return match + space, but only the completion part (what comes after text)
+            result = matches[0] + ' '
+            if text:
+                # Return only the part after what user typed
+                return result[len(text):]
+            else:
+                return result
         else:
             # Multiple matches - find longest common prefix
             lcp = os.path.commonprefix(matches)
             if lcp and len(lcp) > len(text):
                 # There's a longer common prefix
                 tab_press_count = 0
-                return lcp
+                # Return only the new part
+                return lcp[len(text):]
             else:
-                # No progress possible, increment tab counter for display
+                # No progress possible
                 tab_press_count += 1
                 if tab_press_count == 1:
                     # First tab - just ring bell
@@ -322,9 +328,6 @@ def setup_readline():
     
     # Enable tab completion
     readline.parse_and_bind('tab: complete')
-    
-    # Set the append character to space (adds space after single completion)
-    readline.set_completion_append_character(' ')
     
     # Set custom display hook
     readline.set_completion_display_matches_hook(display_matches_hook)
