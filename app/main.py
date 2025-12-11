@@ -217,61 +217,65 @@ last_tab_count = 0
 
 
 def completer(text, state):
-    """Autocomplete function - matching their approach."""
+    """Autocomplete function."""
     global last_tab_text, last_tab_matches, last_tab_count
     
-    # New completion or different text
-    if text != last_tab_text:
-        last_tab_text = text
-        last_tab_count = 0
+    if state == 0:
+        # First call for this TAB press - regenerate matches if text changed
+        if text != last_tab_text:
+            last_tab_text = text
+            last_tab_count = 0  # RESET count when text changes
+            
+            # Get matches
+            builtins = ["exit", "echo", "type", "pwd", "cd"]
+            executables = list(get_all_executables())
+            all_commands = builtins + executables
+            
+            last_tab_matches = sorted([cmd for cmd in all_commands if cmd.startswith(text)])
         
-        # Get matches
-        builtins = ["exit", "echo", "type", "pwd", "cd"]
-        executables = list(get_all_executables())
-        all_commands = builtins + executables
-        
-        last_tab_matches = sorted([cmd for cmd in all_commands if cmd.startswith(text)])
-    
-    # No matches
-    if not last_tab_matches:
-        if state == 0:
-            sys.stdout.write('\a')  # Bell
+        # No matches - ring bell
+        if not last_tab_matches:
+            sys.stdout.write('\a')
             sys.stdout.flush()
-        return None
-    
-    # Single match - return with space
-    if len(last_tab_matches) == 1:
-        if state == 0:
+            return None
+        
+        # Single match - return with space
+        if len(last_tab_matches) == 1:
             return last_tab_matches[0] + " "
-        return None
-    
-    # Multiple matches
-    if last_tab_count == 0:
-        # First tab - ring bell and return text unchanged
-        last_tab_count += 1
-        if state == 0:
-            sys.stdout.write('\a')  # Bell
+        
+        # Multiple matches
+        if last_tab_count == 0:
+            # First tab - ring bell, increment counter
+            last_tab_count += 1
+            sys.stdout.write('\a')
             sys.stdout.flush()
-            return text
-        return None
-    else:
-        # Second tab - display matches
-        if state == 0:
-            print()  # New line
+            return None
+        else:
+            # Second tab - display matches
+            print()
             print("  ".join(last_tab_matches))
             sys.stdout.write(f"$ {text}")
             sys.stdout.flush()
-            return text
-        return None
+            # Reset counter so pressing tab again will ring bell
+            last_tab_count = 0
+            return None
+    
+    return None
 
 
 def main():
+    global last_tab_count, last_tab_text
+    
     # Setup readline
     readline.set_completer(completer)
     readline.parse_and_bind("tab: complete")
     readline.set_completer_delims(" \t\n")
     
     while True:
+        # Reset completion state for each new input line
+        last_tab_count = 0
+        last_tab_text = ""
+        
         sys.stdout.write("$ ")
         sys.stdout.flush()
         try:
