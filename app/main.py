@@ -275,6 +275,49 @@ def main():
                         continue
                     
                     command = args[0]
+                    
+                    # Check if it's a built-in command
+                    builtins = ["exit", "echo", "type", "pwd", "cd"]
+                    if command in builtins:
+                        # Handle built-in in pipeline
+                        if not is_last:
+                            # Not last - capture output to pipe
+                            read_fd, write_fd = os.pipe()
+                            
+                            # Fork to execute built-in
+                            pid = os.fork()
+                            if pid == 0:
+                                # Child process
+                                if prev_read_fd is not None:
+                                    os.dup2(prev_read_fd, 0)
+                                    os.close(prev_read_fd)
+                                os.dup2(write_fd, 1)
+                                os.close(write_fd)
+                                os.close(read_fd)
+                                
+                                # Execute built-in
+                                execute_command(command, args, redirect_file, redirect_stderr, redirect_append)
+                                sys.exit(0)
+                            else:
+                                # Parent process
+                                processes.append(pid)
+                                os.close(write_fd)
+                                if prev_read_fd is not None:
+                                    os.close(prev_read_fd)
+                                prev_read_fd = read_fd
+                        else:
+                            # Last command - execute built-in directly
+                            if prev_read_fd is not None:
+                                # Read and discard stdin for commands like type
+                                try:
+                                    os.read(prev_read_fd, 1000000)
+                                except:
+                                    pass
+                                os.close(prev_read_fd)
+                            execute_command(command, args, redirect_file, redirect_stderr, redirect_append)
+                        continue
+                    
+                    # External command handling
                     full_path = find_executable(command)
                     
                     if not full_path:
@@ -336,7 +379,12 @@ def main():
                 
                 # Wait for all processes
                 for proc in processes:
-                    proc.wait()
+                    if isinstance(proc, int):
+                        # It's a PID from fork
+                        os.waitpid(proc, 0)
+                    else:
+                        # It's a Popen object
+                        proc.wait()
         
         except EOFError:
             break
