@@ -73,10 +73,6 @@ def parse_redirection(cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, False
     
     for i in range(len(cmd_line) - 2, -1, -1):
-        if cmd_line[i:i+3] == '1>>' and is_outside_quotes(i, cmd_line):
-            return cmd_line[:i].strip(), cmd_line[i+3:].strip(), False, True
-    
-    for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, True
     
@@ -394,10 +390,9 @@ def main():
         last_tab_count = 0
         last_tab_text = ""
         
-        sys.stdout.write("$ ")
-        sys.stdout.flush()
         try:
-            line = input()
+            # Use input() with prompt so readline knows about it
+            line = input("$ ")
         except EOFError:
             break
         
