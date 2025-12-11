@@ -190,6 +190,23 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
         return b""
     
     elif command == "history":
+        # Check for -r flag (read history from file)
+        if len(args) > 1 and args[1] == "-r":
+            if len(args) > 2:
+                file_path = args[2]
+                try:
+                    with open(file_path, 'r') as f:
+                        for line in f:
+                            line = line.rstrip('\n')
+                            # Skip empty lines
+                            if line.strip():
+                                command_history.append(line)
+                except FileNotFoundError:
+                    print(f"history: {file_path}: No such file or directory")
+                except Exception as e:
+                    print(f"history: {file_path}: {e}")
+            return b""
+        
         # Get limit if provided
         limit = None
         if len(args) > 1:
