@@ -220,51 +220,58 @@ def completer(text, state):
     """Autocomplete function."""
     global last_tab_text, last_tab_matches, last_tab_count
     
-    if state == 0:
-        # First call for this TAB press - regenerate matches if text changed
-        if text != last_tab_text:
-            last_tab_text = text
-            last_tab_count = 0  # RESET count when text changes
+    # Check if we're completing the first word
+    line = readline.get_line_buffer()
+    if " " not in line.lstrip():
+        # New completion attempt
+        if state == 0:
+            if text != last_tab_text:
+                last_tab_text = text
+                last_tab_matches = []
+                last_tab_count = 0
+                
+                # Get matches
+                builtins = ["exit", "echo", "type", "pwd", "cd"]
+                executables = list(get_all_executables())
+                all_commands = builtins + executables
+                
+                last_tab_matches = sorted([cmd for cmd in all_commands if cmd.startswith(text)])
             
-            # Get matches
-            builtins = ["exit", "echo", "type", "pwd", "cd"]
-            executables = list(get_all_executables())
-            all_commands = builtins + executables
+            # No matches - ring bell
+            if not last_tab_matches:
+                sys.stdout.write('\a')
+                sys.stdout.flush()
+                return None
             
-            last_tab_matches = sorted([cmd for cmd in all_commands if cmd.startswith(text)])
+            # Single match - return with space
+            if len(last_tab_matches) == 1:
+                return last_tab_matches[0] + " "
+            
+            # Multiple matches
+            if last_tab_count == 0:
+                # First tab - ring bell, return text
+                last_tab_count += 1
+                sys.stdout.write('\a')
+                sys.stdout.flush()
+                return text
+            else:
+                # Second tab - display and return text
+                print()
+                print("  ".join(last_tab_matches))
+                sys.stdout.write(f"$ {text}")
+                sys.stdout.flush()
+                return text
         
-        # No matches - ring bell
-        if not last_tab_matches:
-            sys.stdout.write('\a')
-            sys.stdout.flush()
-            return None
-        
-        # Single match - return with space
-        if len(last_tab_matches) == 1:
-            return last_tab_matches[0] + " "
-        
-        # Multiple matches
-        if last_tab_count == 0:
-            # First tab - ring bell, increment counter
-            last_tab_count += 1
-            sys.stdout.write('\a')
-            sys.stdout.flush()
-            return None
-        else:
-            # Second tab - display matches
-            print()
-            print("  ".join(last_tab_matches))
-            sys.stdout.write(f"$ {text}")
-            sys.stdout.flush()
-            # Reset counter so pressing tab again will ring bell
-            last_tab_count = 0
-            return None
+        return None
     
+    # For arguments (space in line), no completion
+    if state == 0:
+        return text
     return None
 
 
 def main():
-    global last_tab_count, last_tab_text
+    global last_tab_count
     
     # Setup readline
     readline.set_completer(completer)
@@ -274,7 +281,6 @@ def main():
     while True:
         # Reset completion state for each new input line
         last_tab_count = 0
-        last_tab_text = ""
         
         sys.stdout.write("$ ")
         sys.stdout.flush()
