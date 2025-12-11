@@ -213,11 +213,12 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
 # Global variables for tab completion
 tab_press_count = 0
 last_matches = []
+last_completion_text = ""
 
 
 def completer(text, state):
     """Autocomplete function."""
-    global tab_press_count, last_matches
+    global tab_press_count, last_matches, last_completion_text
     
     if state == 0:
         # First call for this completion
@@ -228,6 +229,7 @@ def completer(text, state):
         options = [cmd for cmd in all_commands if cmd.startswith(text)]
         options.sort()
         last_matches = options
+        last_completion_text = text
         
         if len(options) == 0:
             # No matches - ring bell
@@ -239,22 +241,30 @@ def completer(text, state):
             tab_press_count = 0
             return options[0] + " "
         else:
-            # Multiple matches - need to handle tab presses
+            # Multiple matches
             tab_press_count += 1
             if tab_press_count == 1:
-                # First tab - ring bell
+                # First tab - just ring bell, return first option to trigger readline
                 sys.stdout.write('\x07')
                 sys.stdout.flush()
+                # Return longest common prefix OR first match
+                lcp = os.path.commonprefix(options)
+                if lcp and len(lcp) > len(text):
+                    return lcp
+                # No common prefix beyond what's typed - don't complete
                 return None
-            # For second tab, let the display hook handle it
-            return None
+            # For second tab and beyond, return all matches so display hook triggers
+            return options[state] if state < len(options) else None
     
+    # Subsequent states - return remaining matches
+    if state < len(last_matches):
+        return last_matches[state]
     return None
 
 
 def display_matches_hook(substitution, matches, longest_match_length):
     """
-    Called when TAB is pressed twice with multiple matches.
+    Called when TAB is pressed with multiple matches.
     """
     global tab_press_count
     
