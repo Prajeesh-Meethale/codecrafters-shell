@@ -253,9 +253,6 @@ def completer(text, state):
         line_buffer = readline.get_line_buffer()
         begin_idx = readline.get_begidx()
         
-        # Get the word being completed (everything from start or after last space)
-        words = line_buffer[:begin_idx].split()
-        
         # Determine what to complete
         builtins = ["exit", "echo", "type", "pwd", "cd"]
         executables = get_all_executables()
@@ -277,9 +274,9 @@ def completer(text, state):
             sys.stdout.flush()
             return None
         elif len(matches) == 1:
-            # Single match - complete with trailing space
+            # Single match - return it (readline adds the space via append character)
             tab_press_count = 0
-            return matches[0] + ' '
+            return matches[0]
         else:
             # Multiple matches - find longest common prefix
             lcp = os.path.commonprefix(matches)
@@ -288,10 +285,15 @@ def completer(text, state):
                 tab_press_count = 0
                 return lcp
             else:
-                # No progress possible, store matches for potential display
-                readline.insert_text('')
+                # No progress possible, increment tab counter for display
+                tab_press_count += 1
+                if tab_press_count == 1:
+                    # First tab - just ring bell
+                    sys.stdout.write('\x07')
+                    sys.stdout.flush()
                 return None
     
+    # Return None for state > 0 (only one match to return)
     return None
 
 
@@ -302,20 +304,12 @@ def display_matches_hook(substitution, matches, longest_match_length):
     """
     global tab_press_count
     
-    # Ring bell on first tab
-    if tab_press_count == 0:
-        sys.stdout.write('\x07')
-        sys.stdout.flush()
-        tab_press_count = 1
-        return
-    
-    # Display matches on second tab
-    if tab_press_count == 1:
-        print()  # New line
-        sorted_matches = sorted(matches)
-        print('  '.join(sorted_matches))
-        print(f"$ {readline.get_line_buffer()}", end='', flush=True)
-        tab_press_count = 0
+    # This is called on second tab press
+    print()  # New line
+    sorted_matches = sorted(matches)
+    print('  '.join(sorted_matches))
+    print(f"$ {readline.get_line_buffer()}", end='', flush=True)
+    tab_press_count = 0
 
 
 def setup_readline():
@@ -328,6 +322,9 @@ def setup_readline():
     
     # Enable tab completion
     readline.parse_and_bind('tab: complete')
+    
+    # Set the append character to space (adds space after single completion)
+    readline.set_completion_append_character(' ')
     
     # Set custom display hook
     readline.set_completion_display_matches_hook(display_matches_hook)
