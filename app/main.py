@@ -2,9 +2,12 @@
 import os
 import subprocess
 import shlex
-import readline
-import glob
 
+try:
+    import msvcrt
+    ON_WINDOWS = True
+except ImportError:
+    ON_WINDOWS = False
 
 def find_executable(command):
     for path in os.environ.get('PATH', '').split(os.pathsep):
@@ -13,29 +16,11 @@ def find_executable(command):
             return full_path
     return None
 
-
-def get_all_executables():
-    """Get all executable files from PATH."""
-    executables = set()
-    for path in os.environ.get('PATH', '').split(os.pathsep):
-        if not os.path.isdir(path):
-            continue
-        try:
-            for entry in os.listdir(path):
-                full_path = os.path.join(path, entry)
-                if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
-                    executables.add(entry)
-        except (PermissionError, OSError):
-            continue
-    return executables
-
-
 def parse_redirection(cmd_line):
     """Parse redirection from command line."""
     redirect_file = None
     redirect_stderr = False
     redirect_append = False
-    
     def is_outside_quotes(pos, text):
         before = text[:pos]
         in_single = False
@@ -51,51 +36,67 @@ def parse_redirection(cmd_line):
                 in_double = not in_double
             j += 1
         return not in_single and not in_double
-    
     # Check for 2>> FIRST (before >>)
     for i in range(len(cmd_line) - 2, -1, -1):
         if cmd_line[i:i+3] == '2>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+3:].strip(), True, True
-    
     # Check for 2> (before >)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '2>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), True, False
-    
     # Check for 1>> BEFORE >> (THIS WAS THE BUG)
     for i in range(len(cmd_line) - 2, -1, -1):
         if cmd_line[i:i+3] == '1>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+3:].strip(), False, True
-    
     # Check for 1> (before >)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '1>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, False
-    
     # Check for >> (after 1>> is already checked)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, True
-    
     # Check for > (last, after all >> variants checked)
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i] == '>' and is_outside_quotes(i, cmd_line):
             if i + 1 < len(cmd_line) and cmd_line[i+1] == '>':
                 continue
             return cmd_line[:i].strip(), cmd_line[i+1:].strip(), False, False
-    
     return cmd_line, None, False, False
 
+def readline_with_tab_completion(builtins):
+    buffer = ""
+    sys.stdout.write("$ ")
+    sys.stdout.flush()
+    while True:
+        ch = msvcrt.getwch()
+        if ch in ('\r', '\n'):
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            return buffer
+        elif ch == '\x08':  # Backspace
+            if buffer:
+                buffer = buffer[:-1]
+                sys.stdout.write('\b \b')
+                sys.stdout.flush()
+        elif ch == '\t':  # Tab
+            matches = [b for b in builtins if b.startswith(buffer)]
+            if len(matches) == 1:
+                to_complete = matches[0][len(buffer):] + " "
+                buffer += to_complete
+                sys.stdout.write(to_complete)
+                sys.stdout.flush()
+        else:
+            buffer += ch
+            sys.stdout.write(ch)
+            sys.stdout.flush()
 
 def execute_command(command, args, redirect_file=None, redirect_stderr=False, redirect_append=False, stdin_data=None, should_print=True):
     """Execute a single command."""
-    
     if command == "exit":
         sys.exit(0 if not args or len(args) < 2 else int(args[1]))
-    
     elif command == "echo":
         output = " ".join(args[1:]) + '\n'
-        
         # Handle stdout redirection (>, >>, 1>, 1>>)
         if redirect_file and not redirect_stderr:
             dir_path = os.path.dirname(redirect_file)
@@ -104,9 +105,7 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
                 f.write(output)
-            # DO NOT print to stdout when redirected
             return b""
-        
         # Handle stderr redirection (2>, 2>>) - creates empty file since echo has no stderr
         if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
@@ -114,13 +113,11 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 os.makedirs(dir_path, exist_ok=True)
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
-                pass  # Just create/truncate the file
-        
+                pass
         # Only print to stdout if NOT redirected
         sys.stdout.write(output)
         sys.stdout.flush()
         return b""
-    
     elif command == "type":
         if len(args) < 2:
             return b""
@@ -133,7 +130,6 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 output = f"{full_path}\n"
             else:
                 output = f"{target}: not found\n"
-        
         # Handle stdout redirection (>, >>, 1>, 1>>)
         if redirect_file and not redirect_stderr:
             dir_path = os.path.dirname(redirect_file)
@@ -142,9 +138,7 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
                 f.write(output)
-            # DO NOT print to stdout when redirected
             return b""
-        
         # Handle stderr redirection (2>, 2>>) - creates empty file since type has no stderr
         if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
@@ -152,16 +146,13 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 os.makedirs(dir_path, exist_ok=True)
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
-                pass  # Just create/truncate the file
-        
+                pass
         # Only print to stdout if NOT redirected
         sys.stdout.write(output)
         sys.stdout.flush()
         return b""
-    
     elif command == "pwd":
         output = os.getcwd() + '\n'
-        
         # Handle stdout redirection (>, >>, 1>, 1>>)
         if redirect_file and not redirect_stderr:
             dir_path = os.path.dirname(redirect_file)
@@ -170,9 +161,7 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
                 f.write(output)
-            # DO NOT print to stdout when redirected
             return b""
-        
         # Handle stderr redirection (2>, 2>>) - creates empty file since pwd has no stderr
         if redirect_stderr and redirect_file:
             dir_path = os.path.dirname(redirect_file)
@@ -180,13 +169,11 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 os.makedirs(dir_path, exist_ok=True)
             mode = 'a' if redirect_append else 'w'
             with open(redirect_file, mode) as f:
-                pass  # Just create/truncate the file
-        
+                pass
         # Only print to stdout if NOT redirected
         sys.stdout.write(output)
         sys.stdout.flush()
         return b""
-    
     elif command == "cd":
         if len(args) > 1:
             path = os.path.expanduser(args[1])
@@ -198,17 +185,14 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
             home = os.path.expanduser("~")
             os.chdir(home)
         return b""
-    
     else:
         # EXTERNAL COMMAND - use shell=True for redirection
         full_path = find_executable(command)
         if not full_path:
             print(f"{command}: command not found")
             return b""
-        
         # Build command line
         cmd_str = ' '.join([command] + args[1:])
-        
         if redirect_file:
             # Add redirection operator
             if redirect_stderr:
@@ -233,124 +217,18 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
                 sys.stdout.buffer.flush()
             return output
 
-
-# Global variable to track consecutive tab presses
-tab_press_count = 0
-last_completion_text = ""
-last_matches = []
-
-
-def completer(text, state):
-    """
-    Readline completer function.
-    Called with state=0,1,2... until it returns None.
-    """
-    global tab_press_count, last_completion_text, last_matches
-    
-    if state == 0:
-        # First call for this completion
-        # Get the current line
-        line_buffer = readline.get_line_buffer()
-        
-        # Determine what to complete
-        builtins = ["exit", "echo", "type", "pwd", "cd"]
-        executables = get_all_executables()
-        all_commands = builtins + list(executables)
-        
-        # Find matches
-        if text:
-            matches = [cmd for cmd in all_commands if cmd.startswith(text)]
-        else:
-            matches = all_commands
-        
-        matches.sort()
-        last_matches = matches
-        last_completion_text = text
-        
-        if len(matches) == 0:
-            # No matches - ring bell
-            sys.stdout.write('\x07')
-            sys.stdout.flush()
-            return None
-        elif len(matches) == 1:
-            # Single match - complete with trailing space
-            tab_press_count = 0
-            # Return match + space, but only the completion part (what comes after text)
-            result = matches[0] + ' '
-            if text:
-                # Return only the part after what user typed
-                return result[len(text):]
-            else:
-                return result
-        else:
-            # Multiple matches - find longest common prefix
-            lcp = os.path.commonprefix(matches)
-            if lcp and len(lcp) > len(text):
-                # There's a longer common prefix
-                tab_press_count = 0
-                # Return only the new part
-                return lcp[len(text):]
-            else:
-                # No progress possible
-                tab_press_count += 1
-                if tab_press_count == 1:
-                    # First tab - just ring bell
-                    sys.stdout.write('\x07')
-                    sys.stdout.flush()
-                return None
-    
-    # Return None for state > 0 (only one match to return)
-    return None
-
-
-def display_matches_hook(substitution, matches, longest_match_length):
-    """
-    Custom display hook for showing multiple matches.
-    Called when TAB is pressed twice with multiple matches.
-    """
-    global tab_press_count
-    
-    # This is called on second tab press
-    print()  # New line
-    sorted_matches = sorted(matches)
-    print('  '.join(sorted_matches))
-    print(f"$ {readline.get_line_buffer()}", end='', flush=True)
-    tab_press_count = 0
-
-
-def setup_readline():
-    """Configure readline for autocompletion."""
-    # Set completer
-    readline.set_completer(completer)
-    
-    # Set completer delimiters (space, tab, etc.)
-    readline.set_completer_delims(' \t\n')
-    
-    # Enable tab completion
-    readline.parse_and_bind('tab: complete')
-    
-    # Set custom display hook
-    readline.set_completion_display_matches_hook(display_matches_hook)
-
-
 def main():
-    global tab_press_count
-    
-    # Setup readline for autocompletion
-    setup_readline()
-    
     while True:
         try:
-            # Reset tab counter for each new line
-            tab_press_count = 0
-            
-            # Use readline for input
-            line = input("$ ")
-            
+            builtins = ["echo", "type", "pwd", "cd", "exit"]
+            if ON_WINDOWS:
+                line = readline_with_tab_completion(builtins)
+            else:
+                sys.stdout.write("$ ")
+                sys.stdout.flush()
+                line = input()
             if not line.strip():
                 continue
-            
-            # Check for pipes
             def is_outside_quotes(pos, text):
                 before = text[:pos]
                 in_single = False
@@ -366,7 +244,6 @@ def main():
                         in_double = not in_double
                     j += 1
                 return not in_single and not in_double
-            
             # Split by pipes
             pipe_parts = []
             current = ""
@@ -377,81 +254,28 @@ def main():
                 else:
                     current += char
             pipe_parts.append(current.strip())
-            
             # Execute
             if len(pipe_parts) == 1:
-                # No pipe
                 cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(pipe_parts[0])
                 args = shlex.split(cmd_part)
                 if args:
                     execute_command(args[0], args, redirect_file, redirect_stderr, redirect_append)
             else:
-                # With pipes
                 processes = []
                 prev_read_fd = None
-                
                 for idx, pipe_cmd in enumerate(pipe_parts):
                     is_last = (idx == len(pipe_parts) - 1)
                     cmd_part, redirect_file, redirect_stderr, redirect_append = parse_redirection(pipe_cmd)
                     args = shlex.split(cmd_part)
-                    
                     if not args:
                         continue
-                    
                     command = args[0]
-                    
-                    # Check if it's a built-in command
-                    builtins = ["exit", "echo", "type", "pwd", "cd"]
-                    if command in builtins:
-                        # Handle built-in in pipeline
-                        if not is_last:
-                            # Not last - capture output to pipe
-                            read_fd, write_fd = os.pipe()
-                            
-                            # Fork to execute built-in
-                            pid = os.fork()
-                            if pid == 0:
-                                # Child process
-                                if prev_read_fd is not None:
-                                    os.dup2(prev_read_fd, 0)
-                                    os.close(prev_read_fd)
-                                os.dup2(write_fd, 1)
-                                os.close(write_fd)
-                                os.close(read_fd)
-                                
-                                # Execute built-in
-                                execute_command(command, args, redirect_file, redirect_stderr, redirect_append)
-                                sys.exit(0)
-                            else:
-                                # Parent process
-                                processes.append(pid)
-                                os.close(write_fd)
-                                if prev_read_fd is not None:
-                                    os.close(prev_read_fd)
-                                prev_read_fd = read_fd
-                        else:
-                            # Last command - execute built-in directly
-                            if prev_read_fd is not None:
-                                # Read and discard stdin for commands like type
-                                try:
-                                    os.read(prev_read_fd, 1000000)
-                                except:
-                                    pass
-                                os.close(prev_read_fd)
-                            execute_command(command, args, redirect_file, redirect_stderr, redirect_append)
-                        continue
-                    
-                    # External command handling
                     full_path = find_executable(command)
-                    
                     if not full_path:
                         print(f"{command}: command not found")
                         break
-                    
                     if not is_last:
-                        # Not last - create pipe for this command's output
                         read_fd, write_fd = os.pipe()
-                        
                         proc = subprocess.Popen(
                             [command] + args[1:],
                             executable=full_path,
@@ -460,20 +284,12 @@ def main():
                             stderr=subprocess.DEVNULL
                         )
                         processes.append(proc)
-                        
-                        # Close write end in parent (child has its own copy)
                         os.close(write_fd)
-                        
-                        # Close previous read fd now that we've passed it to the child
                         if prev_read_fd is not None:
                             os.close(prev_read_fd)
-                        
-                        # Save read end for next command
                         prev_read_fd = read_fd
                     else:
-                        # Last command - reads from prev_read_fd, writes to stdout (or file)
                         if redirect_file:
-                            # Handle redirection for last command
                             if redirect_stderr:
                                 op = '2>>' if redirect_append else '2>'
                             else:
@@ -487,7 +303,6 @@ def main():
                                 stderr=None
                             )
                         else:
-                            # No redirection - output goes to terminal
                             proc = subprocess.Popen(
                                 [command] + args[1:],
                                 executable=full_path,
@@ -496,26 +311,14 @@ def main():
                                 stderr=subprocess.DEVNULL
                             )
                         processes.append(proc)
-                        
-                        # Close the read fd after passing to last command
                         if prev_read_fd is not None:
                             os.close(prev_read_fd)
-                
-                # Wait for all processes
                 for proc in processes:
-                    if isinstance(proc, int):
-                        # It's a PID from fork
-                        os.waitpid(proc, 0)
-                    else:
-                        # It's a Popen object
-                        proc.wait()
-        
+                    proc.wait()
         except EOFError:
             break
         except KeyboardInterrupt:
-            print()
             continue
-
 
 if __name__ == "__main__":
     main()
