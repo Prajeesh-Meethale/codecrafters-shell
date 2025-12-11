@@ -72,6 +72,10 @@ def parse_redirection(cmd_line):
         if cmd_line[i:i+2] == '1>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, False
     
+    for i in range(len(cmd_line) - 2, -1, -1):
+        if cmd_line[i:i+3] == '1>>' and is_outside_quotes(i, cmd_line):
+            return cmd_line[:i].strip(), cmd_line[i+3:].strip(), False, True
+    
     for i in range(len(cmd_line) - 1, -1, -1):
         if cmd_line[i:i+2] == '>>' and is_outside_quotes(i, cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+2:].strip(), False, True
@@ -83,6 +87,10 @@ def parse_redirection(cmd_line):
             return cmd_line[:i].strip(), cmd_line[i+1:].strip(), False, False
     
     return cmd_line, None, False, False
+
+
+# Global history list
+command_history = []
 
 
 def execute_command(command, args, redirect_file=None, redirect_stderr=False, redirect_append=False, stdin_data=None, should_print=True):
@@ -186,8 +194,41 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
         return b""
     
     elif command == "history":
-        # Placeholder for history command
-        # Will be implemented in later stages
+        # Get limit if provided
+        limit = None
+        if len(args) > 1:
+            try:
+                limit = int(args[1])
+            except ValueError:
+                pass
+        
+        # Determine which entries to show
+        if limit is not None:
+            # Show last n entries
+            start_idx = max(0, len(command_history) - limit)
+            entries_to_show = command_history[start_idx:]
+            start_num = start_idx + 1
+        else:
+            # Show all entries
+            entries_to_show = command_history
+            start_num = 1
+        
+        # Print history
+        output = ""
+        for i, cmd in enumerate(entries_to_show, start=start_num):
+            output += f"    {i}  {cmd}\n"
+        
+        if redirect_file and not redirect_stderr:
+            dir_path = os.path.dirname(redirect_file)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            mode = 'a' if redirect_append else 'w'
+            with open(redirect_file, mode) as f:
+                f.write(output)
+            return b""
+        
+        sys.stdout.write(output)
+        sys.stdout.flush()
         return b""
     
     else:
@@ -341,7 +382,7 @@ def complete(text, state):
 
 
 def main():
-    global last_tab_count, last_tab_text
+    global last_tab_count, last_tab_text, command_history
     
     # Setup readline
     readline.parse_and_bind("tab: complete")
@@ -362,6 +403,9 @@ def main():
         
         if not line.strip():
             continue
+        
+        # Add to history
+        command_history.append(line)
         
         # Parse pipes FIRST
         def is_outside_quotes(pos, text):
