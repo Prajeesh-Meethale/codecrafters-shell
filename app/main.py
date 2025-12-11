@@ -211,84 +211,67 @@ def execute_command(command, args, redirect_file=None, redirect_stderr=False, re
 
 
 # Global variables for tab completion
-tab_press_count = 0
-last_matches = []
-last_completion_text = ""
+last_tab_text = ""
+last_tab_matches = []
+last_tab_count = 0
 
 
 def completer(text, state):
-    """Autocomplete function."""
-    global tab_press_count, last_matches, last_completion_text
+    """Autocomplete function - matching their approach."""
+    global last_tab_text, last_tab_matches, last_tab_count
     
-    if state == 0:
-        # First call for this completion
+    # New completion or different text
+    if text != last_tab_text:
+        last_tab_text = text
+        last_tab_count = 0
+        
+        # Get matches
         builtins = ["exit", "echo", "type", "pwd", "cd"]
         executables = list(get_all_executables())
         all_commands = builtins + executables
         
-        options = [cmd for cmd in all_commands if cmd.startswith(text)]
-        options.sort()
-        last_matches = options
-        last_completion_text = text
-        
-        if len(options) == 0:
-            # No matches - ring bell
-            sys.stdout.write('\x07')
+        last_tab_matches = sorted([cmd for cmd in all_commands if cmd.startswith(text)])
+    
+    # No matches
+    if not last_tab_matches:
+        if state == 0:
+            sys.stdout.write('\a')  # Bell
             sys.stdout.flush()
-            return None
-        elif len(options) == 1:
-            # Single match - return with space
-            tab_press_count = 0
-            return options[0] + " "
-        else:
-            # Multiple matches
-            tab_press_count += 1
-            if tab_press_count == 1:
-                # First tab - just ring bell, return first option to trigger readline
-                sys.stdout.write('\x07')
-                sys.stdout.flush()
-                # Return longest common prefix OR first match
-                lcp = os.path.commonprefix(options)
-                if lcp and len(lcp) > len(text):
-                    return lcp
-                # No common prefix beyond what's typed - don't complete
-                return None
-            # For second tab and beyond, return all matches so display hook triggers
-            return options[state] if state < len(options) else None
+        return None
     
-    # Subsequent states - return remaining matches
-    if state < len(last_matches):
-        return last_matches[state]
-    return None
-
-
-def display_matches_hook(substitution, matches, longest_match_length):
-    """
-    Called when TAB is pressed with multiple matches.
-    """
-    global tab_press_count
+    # Single match - return with space
+    if len(last_tab_matches) == 1:
+        if state == 0:
+            return last_tab_matches[0] + " "
+        return None
     
-    # Print newline
-    print()
-    # Print matches separated by two spaces
-    sorted_matches = sorted(matches)
-    print('  '.join(sorted_matches))
-    # Reprint prompt with original input
-    print(f"$ {readline.get_line_buffer()}", end='', flush=True)
-    # Reset tab counter
-    tab_press_count = 0
+    # Multiple matches
+    if last_tab_count == 0:
+        # First tab - ring bell and return text unchanged
+        last_tab_count += 1
+        if state == 0:
+            sys.stdout.write('\a')  # Bell
+            sys.stdout.flush()
+            return text
+        return None
+    else:
+        # Second tab - display matches
+        if state == 0:
+            print()  # New line
+            print("  ".join(last_tab_matches))
+            sys.stdout.write(f"$ {text}")
+            sys.stdout.flush()
+            return text
+        return None
 
 
 def main():
-    global tab_press_count
-    
     # Setup readline
     readline.set_completer(completer)
     readline.parse_and_bind("tab: complete")
-    readline.set_completion_display_matches_hook(display_matches_hook)
+    readline.set_completer_delims(" \t\n")
     
     while True:
-        tab_press_count = 0  # Reset for each new line
         sys.stdout.write("$ ")
         sys.stdout.flush()
         try:
